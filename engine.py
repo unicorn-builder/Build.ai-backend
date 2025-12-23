@@ -13,10 +13,15 @@ supabase = create_client(url, key)
 
 def calculer_fondations(projet):
     poids_total = 0
+    # Sécurité : si la pression est 0 ou vide, on met une valeur par défaut de 0.1
+    pression = projet.sol.pression_admissible if projet.sol.pression_admissible > 0 else 0.1
+    
     for etage in projet.etages:
         for mur in etage.murs:
             poids_total += (mur.longueur * mur.hauteur * mur.epaisseur) * 2500
-    largeur = poids_total / (projet.sol.pression_admissible * 1000000)
+            
+    # Calcul sécurisé
+    largeur = poids_total / (pression * 1000000)
     return round(largeur, 2)
 
 def recuperer_boq_supabase(gamme):
