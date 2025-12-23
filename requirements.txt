@@ -3,4 +3,4 @@ uvicorn
 pydantic
 supabase
 google-generativeai
-python-multipart
+python-dotenv
