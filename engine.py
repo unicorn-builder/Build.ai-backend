@@ -1,20 +1,19 @@
+import google.generativeai as genai
+import os
+
+def generer_note_technique(projet):
+    # On configure l'IA
+    genai.configure(api_key=os.environ.get("GEMINI_API_KEY"))
+    model = genai.GenerativeModel('gemini-1.5-flash')
+    
+    prompt = f"Agis en ingénieur. Pour un projet {projet.nom} en gamme {projet.gamme}, rédige une note de calcul courte pour les fondations et le choix du système CVC."
+    response = model.generate_content(prompt)
+    return response.text
+
 def calculer_fondations(projet):
     poids_total = 0
     for etage in projet.etages:
         for mur in etage.murs:
-            # Volume x Densité béton (2500kg/m3)
             poids_total += (mur.longueur * mur.hauteur * mur.epaisseur) * 2500
-    
-    # Largeur semelle = Poids / Pression sol
     largeur = poids_total / (projet.sol.pression_admissible * 1000000)
     return round(largeur, 2)
-
-def estimer_boq(projet):
-    tarifs = {
-        "Basic": {"m3_beton": 150, "point_elec": 50},
-        "High-end": {"m3_beton": 250, "point_elec": 150},
-        "Luxury": {"m3_beton": 500, "point_elec": 450}
-    }
-    t = tarifs.get(projet.gamme, tarifs["Basic"])
-    # Logique simplifiée de calcul de coût ici...
-    return {"total_estime": "Calculé selon gamme " + projet.gamme}
