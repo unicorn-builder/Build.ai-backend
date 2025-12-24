@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, validator
 from typing import List, Optional, Any
 
 class Mur(BaseModel):
@@ -11,11 +11,16 @@ class Etage(BaseModel):
     murs: List[Mur] = []
     points_lumineux: Any = 0
 
-    @field_validator('points_lumineux', mode='before')
-    @classmethod
+    @validator('points_lumineux', pre=True, always=True)
     def clean_lights(cls, v):
         if isinstance(v, list):
-            return sum(item.get('quantite', 1) if isinstance(item, dict) else 1 for item in v)
+            total = 0
+            for item in v:
+                if isinstance(item, dict):
+                    total += item.get('quantite', 1)
+                else:
+                    total += 1
+            return total
         try: return int(v)
         except: return 0
 
@@ -28,15 +33,13 @@ class Projet(BaseModel):
     sol: Optional[Any] = None
     gamme: str = "Basic"
 
-    @field_validator('sol', mode='before')
-    @classmethod
+    @validator('sol', pre=True, always=True)
     def clean_sol(cls, v):
         if isinstance(v, dict):
             val = v.get('pression_sol_kpa') or v.get('pression_admissible') or 0.1
             return {"pression_admissible": float(val)}
         return {"pression_admissible": 0.1}
 
-    model_config = {
-        "populate_by_name": True,
-        "extra": "ignore"
-    }
+    class Config:
+        allow_population_by_field_name = True
+        extra = "ignore"
