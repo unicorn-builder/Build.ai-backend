@@ -1,404 +1,626 @@
 """
-Tijan AI — Backend FastAPI v2
-Moteur de calcul structurel Eurocodes + Génération PDF + Score Edge
-Remplace l'ancien main.py avec un vrai moteur de calcul
+Archito-Genie FastAPI Backend
+=============================
+Deploy this on your external server (e.g., Railway, Render, AWS, etc.)
+
+Requirements:
+- Python 3.9+
+- pip install fastapi uvicorn openai python-multipart pydantic
+
+Environment variables:
+- OPENAI_API_KEY: Your OpenAI API key
+
+Run locally:
+    uvicorn main:app --reload --host 0.0.0.0 --port 8000
 """
 
-from fastapi import FastAPI, HTTPException, BackgroundTasks
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
-from pydantic import BaseModel, Field, validator
-from typing import Optional, List
 import os
 import uuid
-import tempfile
+import json
+from typing import List, Optional
+from datetime import datetime
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
+from openai import OpenAI
 
-from engine_structural import (
-    ProjetStructurel, ParamsGeometrie, ParamsUsage,
-    ParamsSol, ParamsLocalisation,
-    UsageBatiment, ZoneVent,
-    calculer_structure_complete
-)
-from generate_pdf import generer_pdf, calculer_score_edge
-
-# ============================================================
-# APP
-# ============================================================
+# ==============================================================================
+# CONFIGURATION
+# ==============================================================================
 
 app = FastAPI(
-    title="Tijan AI Engine",
-    description="Moteur de calcul structurel Eurocodes — Engineering Intelligence for Africa",
-    version="2.0.0"
+    title="Archito-Genie API",
+    description="AI-assisted structural, MEPF and sustainability conceptual design generator",
+    version="1.0.0"
 )
 
+# CORS - Allow frontend to connect
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # In production, restrict to your frontend domain
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# ============================================================
-# MODÈLES PYDANTIC — INPUTS
-# ============================================================
+# Create files directory if not exists
+os.makedirs("files", exist_ok=True)
 
-class GeometrieInput(BaseModel):
-    surface_emprise_m2: float = Field(..., gt=0, description="Surface au sol en m²")
-    nb_niveaux: int = Field(..., ge=1, le=50, description="Nombre de niveaux hors RDC")
-    hauteur_etage_m: float = Field(3.0, ge=2.5, le=6.0, description="Hauteur entre niveaux en m")
-    portee_max_m: float = Field(6.0, ge=3.0, le=12.0, description="Portée maximale libre en m")
-    nb_voiles_facade: int = Field(4, ge=2, le=20)
-    nb_voiles_internes: int = Field(2, ge=0, le=10)
-    epaisseur_voile_m: float = Field(0.20, ge=0.15, le=0.50)
+# Mount static files
+app.mount("/files", StaticFiles(directory="files"), name="files")
 
-class UsageInput(BaseModel):
-    usage_principal: str = Field("residentiel", description="residentiel | bureaux | mixte")
-    charge_toiture_kNm2: float = Field(1.0, ge=0.5, le=5.0)
+# In-memory storage (replace with database in production)
+PROJECTS: dict = {}
+ENGINEERING_RESULTS: dict = {}
 
-    @validator('usage_principal')
-    def valider_usage(cls, v):
-        valides = ["residentiel", "bureaux", "mixte"]
-        if v not in valides:
-            raise ValueError(f"Usage doit être parmi : {valides}")
-        return v
+# ==============================================================================
+# PYDANTIC MODELS
+# ==============================================================================
 
-class SolInput(BaseModel):
-    pression_admissible_MPa: float = Field(..., gt=0, le=1.0,
-        description="Contrainte admissible en MPa (ex: 0.12)")
-    profondeur_fondation_m: float = Field(1.5, ge=0.5, le=10.0)
-    presence_nappe: bool = False
-    description: str = Field("", description="Description textuelle du sol")
-
-class LocalisationInput(BaseModel):
-    ville: str = Field("dakar", description="dakar | abidjan | casablanca | lagos")
-    distance_mer_km: float = Field(5.0, ge=0.0, le=500.0)
-    zone_sismique: int = Field(1, ge=1, le=3)
-
-    @validator('ville')
-    def valider_ville(cls, v):
-        valides = ["dakar", "abidjan", "casablanca", "lagos"]
-        if v not in valides:
-            raise ValueError(f"Ville doit être parmi : {valides}")
-        return v
-
-class ProjetInput(BaseModel):
-    nom: str = Field(..., min_length=2, max_length=200,
-        alias="nom_batiment",
-        description="Nom du projet")
-    geometrie: GeometrieInput
-    usage: UsageInput = UsageInput()
-    sol: SolInput
-    localisation: LocalisationInput = LocalisationInput()
-    ingenieur: str = Field("", description="Nom de l'ingénieur responsable")
-
-    class Config:
-        allow_population_by_field_name = True
-        extra = "ignore"
-
-# ============================================================
-# MODÈLES — OUTPUTS
-# ============================================================
-
-class VerificationsOutput(BaseModel):
-    flambement_voile: str
-    fleche_dalle: str
-    poinconnement_dalle: str
-    flambement_poteau: str
-    cisaillement_poutre: str
-
-class ResumeStructurelOutput(BaseModel):
-    beton: str
-    enrobage: str
-    voile_epaisseur: str
-    voile_ferraillage_vertical: str
-    dalle_epaisseur: str
-    dalle_ferraillage_inf: str
-    poteau_section: str
-    poteau_ferraillage: str
-    poteau_cadres: str
-    poutre_section: str
-    poutre_ferraillage_inf: str
-    poutre_ferraillage_sup: str
-    poutre_etriers: str
-    fondations_type: str
-    fondations_detail: str
-    charge_totale_base: str
-    verifications: VerificationsOutput
-
-class ScorePilierOutput(BaseModel):
-    total_pct: int
-    cible_pct: int
-    conforme: bool
-    ecart: int
-
-class ScoreEdgeOutput(BaseModel):
-    energie: ScorePilierOutput
-    eau: ScorePilierOutput
-    materiaux: ScorePilierOutput
-    certifiable: bool
-    statut: str
-
-class ResultatCompletOutput(BaseModel):
-    projet_nom: str
-    statut: str
-    resume: dict
-    score_edge: dict
-    pdf_disponible: bool
-    pdf_url: Optional[str] = None
+class ProjectCreate(BaseModel):
+    name: str
+    location: str
+    building_type: str
+    levels: int
+    gross_floor_area_m2: float
+    climate_zone: Optional[str] = "hot-humid"
+    target_certifications: Optional[List[str]] = ["EDGE"]
 
 
-# ============================================================
-# UTILITAIRES
-# ============================================================
+class Project(BaseModel):
+    id: str
+    name: str
+    location: str
+    building_type: str
+    levels: int
+    gross_floor_area_m2: float
+    climate_zone: str
+    target_certifications: List[str]
+    files: List[str]
+    analyzed: bool
+    created_at: str
 
-def input_vers_projet(data: ProjetInput) -> ProjetStructurel:
-    """Convertit le modèle Pydantic input vers le modèle moteur."""
 
-    usage_map = {
-        "residentiel": UsageBatiment.RESIDENTIEL,
-        "bureaux": UsageBatiment.BUREAUX,
-        "mixte": UsageBatiment.MIXTE,
+class BOQItem(BaseModel):
+    item: str
+    description: str
+    unit: str
+    quantity: float
+    unit_rate: float
+    total: float
+
+
+class BOQOption(BaseModel):
+    tier: str  # Basic, High-End, Luxury
+    items: List[BOQItem]
+    subtotal: float
+    cost_per_m2: float
+
+
+class SustainabilityResult(BaseModel):
+    edge_energy_savings_percent: float
+    edge_water_savings_percent: float
+    edge_materials_savings_percent: float
+    edge_level: str
+    leed_points: Optional[int] = None
+    leed_level: Optional[str] = None
+
+
+class EngineeringResult(BaseModel):
+    project_id: str
+    summary: dict
+    structural: dict
+    mepf: dict
+    automation: dict
+    sustainability: SustainabilityResult
+    boq_options: List[BOQOption]
+
+
+class ReportResponse(BaseModel):
+    project_id: str
+    report_markdown: str
+
+
+# ==============================================================================
+# ARCHITO-GENIE SYSTEM PROMPT
+# ==============================================================================
+
+ARCHITO_GENIE_SYSTEM_PROMPT = """You are Archito-Genie, an AI structural & MEPF conceptual design generator.
+
+You receive a single JSON called `engineering_result`.
+You MUST NOT invent new numerical values.
+Use only the numbers present inside the JSON.
+
+Always begin the output with this disclaimer:
+
+"**Disclaimer:** The following outputs are conceptual and for preliminary studies only. They must be reviewed, completed, and validated by licensed structural and MEPF engineers and official sustainability consultants (EDGE/LEED) before any construction or certification."
+
+Then output the following **7 sections, in order**:
+
+## 1. DESIGN NARRATIVE & PRINCIPLES
+- Project overview and design philosophy
+- Key design drivers and constraints
+- Sustainability approach
+
+## 2. CALCULATIONS (CONCEPTUAL / PRELIMINARY)
+- Structural load assumptions
+- MEPF sizing basis
+- All values must come from the input JSON
+
+## 3. DESIGN SCHEMATICS
+- Conceptual layout descriptions
+- System integration approach
+- Zoning concepts
+
+## 4. STRUCTURAL DRAWINGS (CONCEPTUAL)
+- Foundation concept
+- Framing system description
+- Structural grid layout
+
+## 5. MEPF / INTEGRATION / AUTOMATION DRAWINGS (CONCEPTUAL)
+- HVAC system layout concept
+- Plumbing riser concept
+- Electrical distribution concept
+- Fire protection concept
+- BMS/automation scope
+
+## 6. DATASHEETS
+- Equipment specifications summary
+- Material specifications
+- Performance targets
+
+## 7. BILL OF QUANTITIES – 3 OPTIONS (Basic, High-End, Luxury)
+Present the BOQ data from the JSON in a clear table format for each tier.
+
+Use markdown headings, tables, and bullet lists.
+Avoid fluff. Be precise.
+Do not omit any section."""
+
+
+# ==============================================================================
+# HELPER FUNCTIONS
+# ==============================================================================
+
+def is_coastal_city(location: str) -> bool:
+    """Check if location is a known coastal city."""
+    coastal_cities = [
+        "dakar", "abidjan", "bissau", "lagos", "accra", "lome", "cotonou",
+        "libreville", "douala", "luanda", "maputo", "mombasa", "dar es salaam",
+        "zanzibar", "cape town", "durban", "casablanca", "tunis", "algiers",
+        "alexandria", "saint-louis", "conakry", "freetown", "monrovia"
+    ]
+    location_lower = location.lower()
+    return any(city in location_lower for city in coastal_cities)
+
+
+def calculate_structural_design(project: Project) -> dict:
+    """Generate conceptual structural design based on project parameters."""
+    area = project.gross_floor_area_m2
+    levels = project.levels
+    building_type = project.building_type.lower()
+    
+    # Determine structural system based on building type and size
+    if levels <= 3:
+        system_type = "Load-bearing masonry walls with RC slabs"
+        foundation_type = "Strip foundations"
+        typical_span = "4.0m - 5.0m"
+        slab_thickness = 150
+    elif levels <= 8:
+        system_type = "RC frame with infill masonry"
+        foundation_type = "Isolated pad footings with tie beams"
+        typical_span = "6.0m - 7.5m"
+        slab_thickness = 180
+    else:
+        system_type = "RC shear wall core with perimeter frame"
+        foundation_type = "Raft foundation or piled foundations"
+        typical_span = "7.5m - 9.0m"
+        slab_thickness = 200
+    
+    # Grid calculation
+    floor_area_per_level = area / levels
+    grid_x = round((floor_area_per_level ** 0.5) / 6) + 1
+    grid_y = round((floor_area_per_level ** 0.5) / 6) + 1
+    
+    return {
+        "system_type": system_type,
+        "grid_spacing": f"{grid_x} x {grid_y} grid @ 6.0m c/c",
+        "slab_thickness_mm": slab_thickness,
+        "foundation_type": foundation_type,
+        "spans": typical_span,
+        "structural_concrete_grade": "C30/37",
+        "reinforcement_grade": "B500B",
+        "design_code": "Eurocode 2 / ACI 318"
     }
-    ville_map = {
-        "dakar": ZoneVent.DAKAR,
-        "abidjan": ZoneVent.ABIDJAN,
-        "casablanca": ZoneVent.CASABLANCA,
-        "lagos": ZoneVent.LAGOS,
+
+
+def calculate_mepf_design(project: Project) -> dict:
+    """Generate conceptual MEPF design based on project parameters."""
+    area = project.gross_floor_area_m2
+    levels = project.levels
+    climate = project.climate_zone
+    building_type = project.building_type.lower()
+    
+    # HVAC sizing (W/m² based on climate and building type)
+    cooling_load_factor = {
+        "hot-humid": 150,
+        "hot-dry": 130,
+        "tropical": 160,
+        "temperate": 100,
+        "mediterranean": 110,
+        "cold": 80
+    }.get(climate, 120)
+    
+    cooling_load_kw = round(area * cooling_load_factor / 1000, 1)
+    
+    # HVAC system type based on building size
+    if area < 500:
+        hvac_system = "Split system AC units"
+    elif area < 2000:
+        hvac_system = "VRF (Variable Refrigerant Flow) system"
+    else:
+        hvac_system = "Chilled water system with AHUs"
+    
+    # Electrical sizing
+    electrical_factor = 50  # VA/m² typical
+    electrical_load_kva = round(area * electrical_factor / 1000, 1)
+    
+    # Water demand
+    water_demand_lpd = round(area * 10)  # 10 L/m²/day typical
+    
+    return {
+        "hvac_system": hvac_system,
+        "cooling_load_kw": cooling_load_kw,
+        "cooling_load_per_m2": cooling_load_factor,
+        "water_supply": f"Municipal connection with {round(water_demand_lpd/1000, 1)}m³/day demand",
+        "drainage": "Gravity drainage to municipal sewer",
+        "electrical_load_kva": electrical_load_kva,
+        "electrical_system": "3-phase 400V/230V supply",
+        "fire_protection": "Wet sprinkler system per NFPA 13" if area > 500 else "Fire extinguishers and smoke detectors",
+        "ventilation": f"Mechanical ventilation with {round(area * 10)} L/s fresh air"
     }
 
-    return ProjetStructurel(
-        nom=data.nom,
-        geometrie=ParamsGeometrie(
-            surface_emprise_m2=data.geometrie.surface_emprise_m2,
-            nb_niveaux=data.geometrie.nb_niveaux,
-            hauteur_etage_m=data.geometrie.hauteur_etage_m,
-            portee_max_m=data.geometrie.portee_max_m,
-            nb_voiles_facade=data.geometrie.nb_voiles_facade,
-            nb_voiles_internes=data.geometrie.nb_voiles_internes,
-            epaisseur_voile_m=data.geometrie.epaisseur_voile_m,
-        ),
-        usage=ParamsUsage(
-            usage_principal=usage_map[data.usage.usage_principal],
-            usage_rdc=usage_map[data.usage.usage_principal],
-            charge_toiture_kNm2=data.usage.charge_toiture_kNm2,
-        ),
-        sol=ParamsSol(
-            pression_admissible_MPa=data.sol.pression_admissible_MPa,
-            profondeur_fondation_m=data.sol.profondeur_fondation_m,
-            presence_nappe=data.sol.presence_nappe,
-            description=data.sol.description,
-        ),
-        localisation=ParamsLocalisation(
-            ville=ville_map[data.localisation.ville],
-            distance_mer_km=data.localisation.distance_mer_km,
-            zone_sismique=data.localisation.zone_sismique,
-        ),
+
+def calculate_automation(project: Project) -> dict:
+    """Generate BMS/automation scope."""
+    area = project.gross_floor_area_m2
+    
+    if area < 1000:
+        return {
+            "bms_scope": ["Basic lighting control", "Individual AC control"],
+            "iot_sensors": ["Motion sensors", "Temperature sensors"]
+        }
+    elif area < 5000:
+        return {
+            "bms_scope": [
+                "Centralized HVAC control",
+                "Lighting automation with daylight harvesting",
+                "Energy monitoring",
+                "Access control integration"
+            ],
+            "iot_sensors": [
+                "Occupancy sensors",
+                "Temperature/humidity sensors",
+                "CO2 sensors",
+                "Energy meters"
+            ]
+        }
+    else:
+        return {
+            "bms_scope": [
+                "Full BMS integration",
+                "HVAC optimization with AI",
+                "Lighting automation",
+                "Fire alarm integration",
+                "Vertical transport monitoring",
+                "Energy management system",
+                "Fault detection and diagnostics"
+            ],
+            "iot_sensors": [
+                "Occupancy sensors",
+                "Environmental sensors (T/RH/CO2/PM2.5)",
+                "Water leak sensors",
+                "Energy meters per floor",
+                "Air quality monitors"
+            ]
+        }
+
+
+def calculate_sustainability(project: Project) -> SustainabilityResult:
+    """Calculate sustainability metrics."""
+    # Baseline EDGE calculations
+    energy_savings = 25  # Base 25% from efficient HVAC
+    water_savings = 20   # Base 20% from efficient fixtures
+    materials_savings = 15  # Base 15% from local materials
+    
+    # Adjust based on certifications
+    if "EDGE" in project.target_certifications:
+        energy_savings += 5
+        water_savings += 5
+    if "LEED" in project.target_certifications:
+        energy_savings += 10
+        water_savings += 10
+        materials_savings += 5
+    
+    # Determine EDGE level
+    if energy_savings >= 40 and water_savings >= 40 and materials_savings >= 20:
+        edge_level = "EDGE Advanced"
+    elif energy_savings >= 20 and water_savings >= 20:
+        edge_level = "EDGE Certified"
+    else:
+        edge_level = "Pre-certification"
+    
+    # LEED points estimation
+    leed_points = min(round((energy_savings + water_savings + materials_savings) * 0.8), 80)
+    leed_level = (
+        "Platinum" if leed_points >= 80 else
+        "Gold" if leed_points >= 60 else
+        "Silver" if leed_points >= 50 else
+        "Certified" if leed_points >= 40 else None
+    )
+    
+    return SustainabilityResult(
+        edge_energy_savings_percent=energy_savings,
+        edge_water_savings_percent=water_savings,
+        edge_materials_savings_percent=materials_savings,
+        edge_level=edge_level,
+        leed_points=leed_points,
+        leed_level=leed_level
     )
 
 
-# Stockage temporaire des PDFs générés (remplacer par S3/Supabase en prod)
-PDF_STORE = {}
+def generate_boq_options(project: Project, structural: dict, mepf: dict) -> List[BOQOption]:
+    """Generate 3 BOQ options: Basic, High-End, Luxury."""
+    area = project.gross_floor_area_m2
+    
+    # Cost multipliers per m² (USD)
+    tiers = {
+        "Basic": {"structure": 150, "mepf": 100, "finishes": 50, "automation": 20, "multiplier": 1.0},
+        "High-End": {"structure": 200, "mepf": 150, "finishes": 100, "automation": 50, "multiplier": 1.5},
+        "Luxury": {"structure": 280, "mepf": 220, "finishes": 180, "automation": 100, "multiplier": 2.2}
+    }
+    
+    options = []
+    for tier_name, costs in tiers.items():
+        items = [
+            BOQItem(
+                item="Structure",
+                description=f"{structural['system_type']} - {structural['foundation_type']}",
+                unit="m²",
+                quantity=area,
+                unit_rate=costs["structure"],
+                total=area * costs["structure"]
+            ),
+            BOQItem(
+                item="MEPF",
+                description=f"{mepf['hvac_system']} + {mepf['electrical_system']}",
+                unit="m²",
+                quantity=area,
+                unit_rate=costs["mepf"],
+                total=area * costs["mepf"]
+            ),
+            BOQItem(
+                item="Finishes",
+                description=f"{tier_name} grade finishes and fixtures",
+                unit="m²",
+                quantity=area,
+                unit_rate=costs["finishes"],
+                total=area * costs["finishes"]
+            ),
+            BOQItem(
+                item="Automation",
+                description="BMS and smart building features",
+                unit="m²",
+                quantity=area,
+                unit_rate=costs["automation"],
+                total=area * costs["automation"]
+            )
+        ]
+        
+        subtotal = sum(item.total for item in items)
+        
+        options.append(BOQOption(
+            tier=tier_name,
+            items=items,
+            subtotal=subtotal,
+            cost_per_m2=round(subtotal / area, 2)
+        ))
+    
+    return options
 
-def nettoyer_pdf(path: str):
-    """Supprime un PDF temporaire après envoi."""
-    try:
-        if os.path.exists(path):
-            os.remove(path)
-    except Exception:
-        pass
 
-
-# ============================================================
-# ENDPOINTS
-# ============================================================
+# ==============================================================================
+# API ENDPOINTS
+# ==============================================================================
 
 @app.get("/")
-def health():
-    return {
-        "status": "online",
-        "service": "Tijan AI Engine v2",
-        "moteur": "Eurocodes EN 1990 / EN 1991 / EN 1992 / EN 1997",
-        "version": "2.0.0"
-    }
-
-@app.get("/health")
-def health_check():
-    return {"status": "ok"}
+async def root():
+    """Health check endpoint."""
+    return {"status": "ok", "service": "Archito-Genie API", "version": "1.0.0"}
 
 
-@app.post("/calculate", response_model=ResultatCompletOutput)
-def calculer(data: ProjetInput):
-    """
-    Calcul structurel complet + score Edge.
-    Retourne le résumé exécutif et le score Edge.
-    Ne génère pas le PDF (utiliser /generate pour ça).
-    """
-    try:
-        projet = input_vers_projet(data)
-        resultat = calculer_structure_complete(projet)
-        score = calculer_score_edge(projet, resultat)
+@app.post("/projects", response_model=Project)
+async def create_project(data: ProjectCreate):
+    """Create a new project."""
+    project_id = str(uuid.uuid4())
+    
+    project = Project(
+        id=project_id,
+        name=data.name,
+        location=data.location,
+        building_type=data.building_type,
+        levels=data.levels,
+        gross_floor_area_m2=data.gross_floor_area_m2,
+        climate_zone=data.climate_zone or "hot-humid",
+        target_certifications=data.target_certifications or ["EDGE"],
+        files=[],
+        analyzed=False,
+        created_at=datetime.now().isoformat()
+    )
+    
+    PROJECTS[project_id] = project
+    return project
 
-        # Formater le score Edge pour la réponse
-        score_output = {
-            "energie": {
-                "total_pct": score["energie"]["total_pct"],
-                "cible_pct": 20,
-                "conforme": score["energie"]["conforme"],
-                "ecart": score["energie"]["ecart"],
-            },
-            "eau": {
-                "total_pct": score["eau"]["total_pct"],
-                "cible_pct": 20,
-                "conforme": score["eau"]["conforme"],
-                "ecart": score["eau"]["ecart"],
-            },
-            "materiaux": {
-                "total_pct": score["materiaux"]["total_pct"],
-                "cible_pct": 20,
-                "conforme": score["materiaux"]["conforme"],
-                "ecart": score["materiaux"]["ecart"],
-            },
-            "certifiable": score["global"]["certifiable"],
-            "statut": score["global"]["statut"],
-        }
 
-        return ResultatCompletOutput(
-            projet_nom=resultat.projet_nom,
-            statut="success",
-            resume=resultat.resume_executif,
-            score_edge=score_output,
-            pdf_disponible=False,
+@app.post("/projects/{project_id}/files", response_model=Project)
+async def upload_files(
+    project_id: str,
+    architectural_plan: UploadFile = File(...),
+    soil_report: Optional[UploadFile] = File(None),
+    additional_files: List[UploadFile] = File(default=[])
+):
+    """Upload project files."""
+    if project_id not in PROJECTS:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    project = PROJECTS[project_id]
+    uploaded_files = []
+    
+    # Validate architectural plan extension
+    allowed_extensions = ['.rvt', '.dwg', '.pdf']
+    ext = os.path.splitext(architectural_plan.filename)[1].lower()
+    if ext not in allowed_extensions:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Architectural plan must be one of: {', '.join(allowed_extensions)}"
         )
+    
+    # Save architectural plan (mandatory)
+    arch_filename = f"{project_id}_arch_{architectural_plan.filename}"
+    arch_path = os.path.join("files", arch_filename)
+    with open(arch_path, "wb") as f:
+        content = await architectural_plan.read()
+        f.write(content)
+    uploaded_files.append(arch_filename)
+    
+    # Save soil report (optional)
+    if soil_report:
+        soil_filename = f"{project_id}_soil_{soil_report.filename}"
+        soil_path = os.path.join("files", soil_filename)
+        with open(soil_path, "wb") as f:
+            content = await soil_report.read()
+            f.write(content)
+        uploaded_files.append(soil_filename)
+    
+    # Save additional files (optional)
+    for file in additional_files:
+        if file.filename:
+            add_filename = f"{project_id}_add_{file.filename}"
+            add_path = os.path.join("files", add_filename)
+            with open(add_path, "wb") as f:
+                content = await file.read()
+                f.write(content)
+            uploaded_files.append(add_filename)
+    
+    # Update project
+    project.files = uploaded_files
+    PROJECTS[project_id] = project
+    
+    return project
 
-    except ValueError as e:
-        raise HTTPException(status_code=422, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Erreur moteur : {str(e)}")
+
+@app.post("/projects/{project_id}/analyze", response_model=EngineeringResult)
+async def analyze_project(project_id: str):
+    """Run technical conceptual analysis."""
+    if project_id not in PROJECTS:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    project = PROJECTS[project_id]
+    
+    if not project.files:
+        raise HTTPException(status_code=400, detail="No files uploaded")
+    
+    # Infer environmental data
+    proximity_to_sea = is_coastal_city(project.location)
+    
+    # Generate conceptual designs
+    structural = calculate_structural_design(project)
+    mepf = calculate_mepf_design(project)
+    automation = calculate_automation(project)
+    sustainability = calculate_sustainability(project)
+    boq_options = generate_boq_options(project, structural, mepf)
+    
+    result = EngineeringResult(
+        project_id=project_id,
+        summary={
+            "building_type": project.building_type,
+            "location": project.location,
+            "levels": project.levels,
+            "gross_floor_area_m2": project.gross_floor_area_m2,
+            "climate_zone": project.climate_zone,
+            "proximity_to_sea": proximity_to_sea,
+            "target_certifications": project.target_certifications
+        },
+        structural=structural,
+        mepf=mepf,
+        automation=automation,
+        sustainability=sustainability,
+        boq_options=boq_options
+    )
+    
+    # Store result
+    ENGINEERING_RESULTS[project_id] = result
+    project.analyzed = True
+    PROJECTS[project_id] = project
+    
+    return result
 
 
-@app.post("/generate")
-def generer(data: ProjetInput, background_tasks: BackgroundTasks):
-    """
-    Calcul complet + génération PDF signable (structurel + Edge).
-    Retourne le PDF en téléchargement direct.
-    """
+@app.get("/projects/{project_id}/engineering-result", response_model=EngineeringResult)
+async def get_engineering_result(project_id: str):
+    """Get the engineering analysis result."""
+    if project_id not in ENGINEERING_RESULTS:
+        raise HTTPException(status_code=404, detail="Engineering result not found. Run analysis first.")
+    
+    return ENGINEERING_RESULTS[project_id]
+
+
+@app.get("/projects/{project_id}/report", response_model=ReportResponse)
+async def generate_report(project_id: str):
+    """Generate the full AI report using OpenAI API."""
+    if project_id not in ENGINEERING_RESULTS:
+        raise HTTPException(status_code=404, detail="Engineering result not found. Run analysis first.")
+    
+    # Get OpenAI API key
+    openai_api_key = os.environ.get("OPENAI_API_KEY")
+    if not openai_api_key:
+        raise HTTPException(status_code=500, detail="OPENAI_API_KEY not configured on server")
+    
+    engineering_result = ENGINEERING_RESULTS[project_id]
+    project = PROJECTS[project_id]
+    
+    # Convert to JSON for the prompt
+    result_json = json.dumps(engineering_result.dict(), indent=2)
+    
+    # Call OpenAI API
+    client = OpenAI(api_key=openai_api_key)
+    
     try:
-        projet = input_vers_projet(data)
-        resultat = calculer_structure_complete(projet)
-
-        # Générer le PDF dans un fichier temporaire
-        pdf_id = str(uuid.uuid4())
-        pdf_path = os.path.join(tempfile.gettempdir(), f"tijan_{pdf_id}.pdf")
-
-        ingenieur = data.ingenieur or "A completer par l'ingenieur responsable"
-        generer_pdf(
-            resultat=resultat,
-            projet=projet,
-            output_path=pdf_path,
-            ingenieur=ingenieur
+        response = client.chat.completions.create(
+            model="gpt-4o",  # or "gpt-5" when available
+            messages=[
+                {"role": "system", "content": ARCHITO_GENIE_SYSTEM_PROMPT},
+                {"role": "user", "content": f"Project: {project.name}\n\nEngineering Result JSON:\n```json\n{result_json}\n```\n\nGenerate the complete 7-section Archito-Genie design report."}
+            ],
+            max_tokens=8000,
+            temperature=0.7
         )
-
-        # Nettoyer après envoi
-        background_tasks.add_task(nettoyer_pdf, pdf_path)
-
-        nom_fichier = f"tijan_note_calcul_{projet.nom.replace(' ', '_')[:40]}.pdf"
-
-        return FileResponse(
-            path=pdf_path,
-            media_type="application/pdf",
-            filename=nom_fichier,
-            headers={"Content-Disposition": f"attachment; filename={nom_fichier}"}
-        )
-
-    except ValueError as e:
-        raise HTTPException(status_code=422, detail=str(e))
+        
+        report_markdown = response.choices[0].message.content
+        
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Erreur génération PDF : {str(e)}")
+        raise HTTPException(status_code=500, detail=f"OpenAI API error: {str(e)}")
+    
+    return ReportResponse(
+        project_id=project_id,
+        report_markdown=report_markdown
+    )
 
 
-@app.post("/calculate/structure-only")
-def calculer_structure(data: ProjetInput):
-    """
-    Calcul structurel uniquement — sans Edge, sans PDF.
-    Endpoint rapide pour pré-visualisation.
-    """
-    try:
-        projet = input_vers_projet(data)
-        resultat = calculer_structure_complete(projet)
+# ==============================================================================
+# MAIN
+# ==============================================================================
 
-        return {
-            "statut": "success",
-            "projet_nom": resultat.projet_nom,
-            "beton": {
-                "classe": resultat.beton.classe_exposition.value,
-                "fc28_MPa": resultat.beton.fc28_MPa,
-                "fcd_MPa": resultat.beton.fcd_MPa,
-                "fyd_MPa": resultat.beton.fyd_MPa,
-                "enrobage_mm": resultat.beton.enrobage_mm,
-            },
-            "charges": {
-                "G_kNm2": resultat.descente_charges.charge_permanente_G_kNm2,
-                "Q_kNm2": resultat.descente_charges.charge_exploitation_Q_kNm2,
-                "ELU_kNm2": resultat.descente_charges.combinaison_ELU_kNm2,
-                "charge_base_kN": resultat.descente_charges.charge_totale_base_kN,
-            },
-            "voile": {
-                "epaisseur_cm": int(resultat.voile.epaisseur_retenue_m * 100),
-                "As_vertical_cm2_ml": resultat.voile.ferraillage_vertical_cm2_m,
-                "As_horizontal_cm2_ml": resultat.voile.ferraillage_horizontal_cm2_m,
-            },
-            "dalle": {
-                "epaisseur_cm": int(resultat.dalle.epaisseur_retenue_m * 100),
-                "As_inf_cm2_ml": resultat.dalle.ferraillage_inferieur_cm2_m,
-                "As_sup_cm2_ml": resultat.dalle.ferraillage_superieur_cm2_m,
-                "chapeau_requis": resultat.dalle.epaisseur_chapeau_m is not None,
-                "epaisseur_chapeau_cm": int(resultat.dalle.epaisseur_chapeau_m * 100)
-                    if resultat.dalle.epaisseur_chapeau_m else None,
-            },
-            "poteau_rdc": {
-                "section_cm": f"{int(resultat.poteau.section_b_m*100)}x{int(resultat.poteau.section_h_m*100)}",
-                "ferraillage": f"{resultat.poteau.nb_barres}HA{resultat.poteau.diametre_barres_mm}",
-                "cadres": f"HA{resultat.poteau.ferraillage_transversal_mm}/{resultat.poteau.espacement_cadres_mm}mm",
-            },
-            "poutre": {
-                "section_cm": f"{int(resultat.poutre.largeur_b_m*100)}x{int(resultat.poutre.hauteur_h_m*100)}",
-                "ferraillage_inf": f"{resultat.poutre.nb_barres_inf}HA{resultat.poutre.diametre_barres_mm}",
-                "ferraillage_sup": f"{resultat.poutre.nb_barres_sup}HA{resultat.poutre.diametre_barres_mm}",
-                "etriers": f"HA{resultat.poutre.ferraillage_transversal_mm}/{resultat.poutre.espacement_cadres_mm}mm",
-            },
-            "fondations": {
-                "type": resultat.fondations.type_fondation,
-                "justification": resultat.fondations.justification,
-                "largeur_semelle_m": resultat.fondations.largeur_semelle_m,
-                "epaisseur_radier_m": resultat.fondations.epaisseur_radier_m,
-                "diametre_pieux_m": resultat.fondations.diametre_pieux_m,
-                "longueur_pieux_m": resultat.fondations.longueur_pieux_m,
-                "nb_pieux_par_poteau": resultat.fondations.nb_pieux_par_poteau,
-            },
-            "verifications": resultat.resume_executif.get("verifications", {}),
-        }
-
-    except ValueError as e:
-        raise HTTPException(status_code=422, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Erreur calcul : {str(e)}")
-
-
-@app.post("/calculate/edge-only")
-def calculer_edge(data: ProjetInput):
-    """
-    Score Edge uniquement — à partir des paramètres du projet.
-    """
-    try:
-        projet = input_vers_projet(data)
-        resultat = calculer_structure_complete(projet)
-        score = calculer_score_edge(projet, resultat)
-
-        return {
-            "statut": "success",
-            "projet_nom": data.nom,
-            "score_edge": score,
-        }
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
