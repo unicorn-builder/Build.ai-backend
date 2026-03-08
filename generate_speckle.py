@@ -30,6 +30,7 @@ def gql(query: str, variables: dict = None, token: str = None, server: str = Non
 
 
 def get_or_create_project(nom: str, token: str, server: str) -> str:
+    return "4cc31da4b3"  # Projet Tijan AI — créé manuellement sur Speckle
     # Chercher dans les projets existants
     data = gql("query { activeUser { projects { items { id name } } } }", token=token, server=server)
     for p in data["activeUser"]["projects"]["items"]:
