@@ -26,26 +26,41 @@ def gql(query: str, variables: dict = None, token: str = None, server: str = Non
 
 
 def get_or_create_model(project_id: str, model_name: str, token: str, server: str) -> str:
-    """Crée un model (branche) dans le projet. Schéma vérifié: CreateModelInput{projectId,name,description}"""
+    """Crée un model ou récupère l'existant."""
     # Chercher si existe déjà
-    data = gql("""
-        query($projectId: String!) {
-            project(id: $projectId) { models { items { id name } } }
-        }
-    """, {"projectId": project_id}, token=token, server=server)
+    try:
+        data = gql("""
+            query($projectId: String!) {
+                project(id: $projectId) { models { items { id name } } }
+            }
+        """, {"projectId": project_id}, token=token, server=server)
+        for m in data["project"]["models"]["items"]:
+            if m["name"] == model_name:
+                return m["id"]
+    except Exception:
+        pass
 
-    for m in data["project"]["models"]["items"]:
-        if m["name"] == model_name:
-            return m["id"]
-
-    # Créer — schéma exact: projectId: ID!, name: String!, description: String
-    data = gql("""
-        mutation($input: CreateModelInput!) {
-            modelMutations { create(input: $input) { id } }
-        }
-    """, {"input": {"projectId": project_id, "name": model_name}},
-        token=token, server=server)
-    return data["modelMutations"]["create"]["id"]
+    # Créer — si déjà existant, Speckle retourne BRANCH_CREATE_ERROR → on relit la liste
+    try:
+        data = gql("""
+            mutation($input: CreateModelInput!) {
+                modelMutations { create(input: $input) { id } }
+            }
+        """, {"input": {"projectId": project_id, "name": model_name}},
+            token=token, server=server)
+        return data["modelMutations"]["create"]["id"]
+    except Exception as e:
+        if "already exists" in str(e):
+            # Relire la liste et retourner l'ID
+            data = gql("""
+                query($projectId: String!) {
+                    project(id: $projectId) { models { items { id name } } }
+                }
+            """, {"projectId": project_id}, token=token, server=server)
+            for m in data["project"]["models"]["items"]:
+                if m["name"] == model_name:
+                    return m["id"]
+        raise
 
 
 def send_objects(project_id: str, objects: list, token: str, server: str) -> str:
