@@ -228,8 +228,11 @@ def assembler_objets(resultats: Dict[str, Any], nom_projet: str) -> list:
         "Score_Edge_Eau":score_edge.get("eau",{}).get("total_pct",0),
         "Score_Edge_Materiaux":score_edge.get("materiaux",{}).get("total_pct",0),
         "Generateur":"Tijan AI Engine v2","totalChildrenCount":len(all_objects),
-        "@poteaux":poteau_ids,"@poutres":poutre_ids,"@dalles":dalle_ids,"@pieux":pieu_ids}
-    root_id = make_id(root_data)
+        "@poteaux": [o for o in all_objects if "Column" in o.get("speckle_type","")],
+        "@poutres": [o for o in all_objects if "Beam"   in o.get("speckle_type","")],
+        "@dalles":  [o for o in all_objects if "Floor"  in o.get("speckle_type","")],
+        "@pieux":   [o for o in all_objects if "Pile"   in o.get("speckle_type","")]}
+    root_id = make_id({k:v for k,v in root_data.items() if k not in ["@poteaux","@poutres","@dalles","@pieux"]})
     root_data["id"] = root_id
 
     return [root_data] + all_objects
