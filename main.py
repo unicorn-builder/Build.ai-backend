@@ -444,3 +444,25 @@ async def generate_ifc_endpoint(projet: dict):
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+# ── ENDPOINT SPECKLE ──────────────────────────────────────────────────────────
+from generate_speckle import envoyer_sur_speckle
+
+class SpeckleRequest(BaseModel):
+    resultats: dict
+    nom_projet: str = "Projet Tijan AI"
+    token: str = None
+    server_url: str = None
+
+@app.post("/generate-speckle")
+async def generate_speckle_endpoint(req: SpeckleRequest):
+    try:
+        result = envoyer_sur_speckle(
+            resultats=req.resultats,
+            nom_projet=req.nom_projet,
+            token=req.token,
+            server_url=req.server_url
+        )
+        return {"success": True, **result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
