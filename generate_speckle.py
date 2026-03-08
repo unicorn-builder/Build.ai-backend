@@ -100,11 +100,23 @@ def make_id(data: dict) -> str:
     content = json.dumps(data, sort_keys=True, separators=(',', ':'))
     return hashlib.md5(content.encode()).hexdigest()
 
-def build_box_mesh(x, y, z, dx, dy, dz):
-    x2,y2,z2 = x+dx, y+dy, z+dz
-    verts = [x,y,z, x2,y,z, x2,y2,z, x,y2,z, x,y,z2, x2,y,z2, x2,y2,z2, x,y2,z2]
-    faces = [4,0,1,2,3, 4,4,5,6,7, 4,0,1,5,4, 4,2,3,7,6, 4,0,3,7,4, 4,1,2,6,5]
-    return {"speckle_type":"Objects.Geometry.Mesh","vertices":verts,"faces":faces,"units":"m"}
+def make_box(x, y, z, dx, dy, dz):
+    """Crée une Box Speckle native — rendu garanti par le viewer."""
+    return {
+        "speckle_type": "Objects.Geometry.Box",
+        "basePlane": {
+            "speckle_type": "Objects.Geometry.Plane",
+            "origin": {"speckle_type": "Objects.Geometry.Point", "x": x+dx/2, "y": y+dy/2, "z": z+dz/2, "units": "m"},
+            "normal": {"speckle_type": "Objects.Geometry.Vector", "x": 0, "y": 0, "z": 1, "units": "m"},
+            "xdir":  {"speckle_type": "Objects.Geometry.Vector", "x": 1, "y": 0, "z": 0, "units": "m"},
+            "ydir":  {"speckle_type": "Objects.Geometry.Vector", "x": 0, "y": 1, "z": 0, "units": "m"},
+            "units": "m"
+        },
+        "xSize": {"speckle_type": "Objects.Primitive.Interval", "start": -dx/2, "end": dx/2},
+        "ySize": {"speckle_type": "Objects.Primitive.Interval", "start": -dy/2, "end": dy/2},
+        "zSize": {"speckle_type": "Objects.Primitive.Interval", "start": -dz/2, "end": dz/2},
+        "units": "m"
+    }
 
 def build_cylinder_mesh(cx, cy, z_bot, radius, height, segments=12):
     verts, faces = [], []
@@ -174,7 +186,7 @@ def assembler_objets(resultats: Dict[str, Any], nom_projet: str) -> list:
         for x in xs:
             for y in ys:
                 obj = new_obj({"speckle_type":"Objects.BuiltElements.Column",
-                    "displayValue":[build_box_mesh(x-sb_n/2,y-sh_n/2,z_bas,sb_n,sh_n,h_etage)],
+                    "displayValue":[make_box(x-sb_n/2,y-sh_n/2,z_bas,sb_n,sh_n,h_etage)],
                     "Niveau":nom_n,"Section":f"{int(sb_n*100)}x{int(sh_n*100)}cm",
                     "Armatures":arm_n,"Beton":"C30/37 XS1","N_Ed_kN":N_Ed,"Taux_pct":taux,
                     "Norme":"EN 1992-1-1","Generateur":"Tijan AI"})
@@ -185,7 +197,7 @@ def assembler_objets(resultats: Dict[str, Any], nom_projet: str) -> list:
             for i in range(len(xs)-1):
                 x1,x2=xs[i]+sb_n/2,xs[i+1]-sb_n/2
                 obj = new_obj({"speckle_type":"Objects.BuiltElements.Beam",
-                    "displayValue":[build_box_mesh(x1,y-pb/2,z_haut-ph,x2-x1,pb,ph)],
+                    "displayValue":[make_box(x1,y-pb/2,z_haut-ph,x2-x1,pb,ph)],
                     "Niveau":nom_n,"Section":f"{int(pb*100)}x{int(ph*100)}cm",
                     "Armatures":arm_po,"Etriers":etr,"Norme":"EN 1992-1-1","Generateur":"Tijan AI"})
                 all_objects.append(obj)
@@ -195,7 +207,7 @@ def assembler_objets(resultats: Dict[str, Any], nom_projet: str) -> list:
             for j in range(len(ys)-1):
                 y1,y2=ys[j]+sh_n/2,ys[j+1]-sh_n/2
                 obj = new_obj({"speckle_type":"Objects.BuiltElements.Beam",
-                    "displayValue":[build_box_mesh(x-pb/2,y1,z_haut-ph,pb,y2-y1,ph)],
+                    "displayValue":[make_box(x-pb/2,y1,z_haut-ph,pb,y2-y1,ph)],
                     "Niveau":nom_n,"Section":f"{int(pb*100)}x{int(ph*100)}cm",
                     "Armatures":arm_po,"Etriers":etr,"Norme":"EN 1992-1-1","Generateur":"Tijan AI"})
                 all_objects.append(obj)
@@ -204,7 +216,7 @@ def assembler_objets(resultats: Dict[str, Any], nom_projet: str) -> list:
         if n>0:
             lx,ly=nb_trav*portee,nb_trav*portee
             obj = new_obj({"speckle_type":"Objects.BuiltElements.Floor",
-                "displayValue":[build_box_mesh(0,0,z_haut-ep_d,lx,ly,ep_d)],
+                "displayValue":[make_box(0,0,z_haut-ep_d,lx,ly,ep_d)],
                 "Niveau":nom_n,"Epaisseur_cm":int(ep_d*100),"Ferraillage":fer_d,
                 "Norme":"EN 1992-1-1","Generateur":"Tijan AI"})
             all_objects.append(obj)
@@ -215,7 +227,7 @@ def assembler_objets(resultats: Dict[str, Any], nom_projet: str) -> list:
         for x in xs:
             for y in ys:
                 obj = new_obj({"speckle_type":"Objects.BuiltElements.Pile",
-                    "displayValue":[build_cylinder_mesh(x,y,-l_pieu,d_pieu/2,l_pieu)],
+                    "displayValue":[make_box(x-d_pieu/2,y-d_pieu/2,-l_pieu,d_pieu,d_pieu,l_pieu)],
                     "Diametre_m":d_pieu,"Longueur_m":l_pieu,"Charge_kN":charge,
                     "Type":"Pieu fore","Beton":"C25/30","Generateur":"Tijan AI"})
                 all_objects.append(obj)
