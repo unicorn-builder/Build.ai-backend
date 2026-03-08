@@ -30,17 +30,32 @@ def gql(query: str, variables: dict = None, token: str = None, server: str = Non
 
 
 def get_or_create_project(nom: str, token: str, server: str) -> str:
+    # Chercher dans les projets existants
     data = gql("query { activeUser { projects { items { id name } } } }", token=token, server=server)
     for p in data["activeUser"]["projects"]["items"]:
-        if p["name"] == "Tijan AI — Modèles Structurels":
+        if p["name"] == "Tijan AI — Modeles Structurels":
             return p["id"]
-    data = gql("""
-        mutation CreateProject($name: String!, $description: String) {
-            projectMutations { create(input: { name: $name, description: $description }) { id } }
+
+    # Trouver le workspace ID
+    data_ws = gql("query { activeUser { workspaces { items { id name slug } } } }", token=token, server=server)
+    workspace_id = None
+    for ws in data_ws["activeUser"]["workspaces"]["items"]:
+        workspace_id = ws["id"]
+        break  # prend le premier workspace
+
+    # Créer le projet dans le workspace
+    mutation = """
+        mutation CreateProject($name: String!, $description: String, $workspaceId: String) {
+            projectMutations { create(input: { name: $name, description: $description, workspaceId: $workspaceId }) { id } }
         }
-    """, {"name": "Tijan AI — Modèles Structurels", "description": "Modèles BIM générés par Tijan AI Engine v2"},
-        token=token, server=server)
+    """
+    data = gql(mutation, {
+        "name": "Tijan AI — Modeles Structurels",
+        "description": "Modeles BIM generes par Tijan AI Engine v2",
+        "workspaceId": workspace_id
+    }, token=token, server=server)
     return data["projectMutations"]["create"]["id"]
+
 
 
 def get_or_create_model(project_id: str, model_name: str, token: str, server: str) -> str:
