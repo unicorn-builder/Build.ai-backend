@@ -13,7 +13,7 @@ import base64
 import io
 import os
 from typing import Optional
-import pdfplumber
+
 
 
 # ============================================================
@@ -42,6 +42,8 @@ KEYWORDS_NIVEAUX = {
 # ============================================================
 
 def extraire_texte_pdf(pdf_path: str) -> dict:
+    import pdfplumber
+    import pdfplumber
     """
     Extrait tout le texte d'un PDF architectural page par page.
     Retourne un dict {page_num: texte}
@@ -410,6 +412,7 @@ def valider_extraction(json_engine: dict) -> dict:
 # ============================================================
 
 def parser_plans_architecte(
+    
     pdf_paths: list,
     pression_sol_mpa: float = 0.12,
     verbose: bool = True
