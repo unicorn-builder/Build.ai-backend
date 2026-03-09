@@ -3,6 +3,8 @@ Tijan AI — Backend FastAPI v2
 Moteur de calcul structurel Eurocodes + Génération PDF + Score Edge
 Remplace l'ancien main.py avec un vrai moteur de calcul
 """
+import gc
+gc.enable()
 
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
@@ -152,8 +154,6 @@ class ResultatCompletOutput(BaseModel):
 # ============================================================
 
 def input_vers_projet(data: ProjetInput) -> ProjetStructurel:
-    """Convertit le modèle Pydantic input vers le modèle moteur."""
-
     usage_map = {
         "residentiel": UsageBatiment.RESIDENTIEL,
         "bureaux": UsageBatiment.BUREAUX,
@@ -165,7 +165,6 @@ def input_vers_projet(data: ProjetInput) -> ProjetStructurel:
         "casablanca": ZoneVent.CASABLANCA,
         "lagos": ZoneVent.LAGOS,
     }
-
     return ProjetStructurel(
         nom=data.nom,
         geometrie=ParamsGeometrie(
@@ -195,12 +194,9 @@ def input_vers_projet(data: ProjetInput) -> ProjetStructurel:
         ),
     )
 
-
-# Stockage temporaire des PDFs générés (remplacer par S3/Supabase en prod)
 PDF_STORE = {}
 
 def nettoyer_pdf(path: str):
-    """Supprime un PDF temporaire après envoi."""
     try:
         if os.path.exists(path):
             os.remove(path)
@@ -228,40 +224,20 @@ def health_check():
 
 @app.post("/calculate", response_model=ResultatCompletOutput)
 def calculer(data: ProjetInput):
-    """
-    Calcul structurel complet + score Edge.
-    Retourne le résumé exécutif et le score Edge.
-    Ne génère pas le PDF (utiliser /generate pour ça).
-    """
     try:
         projet = input_vers_projet(data)
         resultat = calculer_structure_complete(projet)
         score = calculer_score_edge(projet, resultat)
-
-        # Formater le score Edge pour la réponse
         score_output = {
-            "energie": {
-                "total_pct": score["energie"]["total_pct"],
-                "cible_pct": 20,
-                "conforme": score["energie"]["conforme"],
-                "ecart": score["energie"]["ecart"],
-            },
-            "eau": {
-                "total_pct": score["eau"]["total_pct"],
-                "cible_pct": 20,
-                "conforme": score["eau"]["conforme"],
-                "ecart": score["eau"]["ecart"],
-            },
-            "materiaux": {
-                "total_pct": score["materiaux"]["total_pct"],
-                "cible_pct": 20,
-                "conforme": score["materiaux"]["conforme"],
-                "ecart": score["materiaux"]["ecart"],
-            },
+            "energie": {"total_pct": score["energie"]["total_pct"], "cible_pct": 20,
+                        "conforme": score["energie"]["conforme"], "ecart": score["energie"]["ecart"]},
+            "eau":     {"total_pct": score["eau"]["total_pct"], "cible_pct": 20,
+                        "conforme": score["eau"]["conforme"], "ecart": score["eau"]["ecart"]},
+            "materiaux":{"total_pct": score["materiaux"]["total_pct"], "cible_pct": 20,
+                        "conforme": score["materiaux"]["conforme"], "ecart": score["materiaux"]["ecart"]},
             "certifiable": score["global"]["certifiable"],
             "statut": score["global"]["statut"],
         }
-
         return ResultatCompletOutput(
             projet_nom=resultat.projet_nom,
             statut="success",
@@ -269,141 +245,98 @@ def calculer(data: ProjetInput):
             score_edge=score_output,
             pdf_disponible=False,
         )
-
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erreur moteur : {str(e)}")
+    finally:
+        gc.collect()
 
 
 @app.post("/generate")
 def generer(data: ProjetInput, background_tasks: BackgroundTasks):
-    """
-    Calcul complet + génération PDF signable (structurel + Edge).
-    Retourne le PDF en téléchargement direct.
-    """
     try:
         projet = input_vers_projet(data)
         resultat = calculer_structure_complete(projet)
-
-        # Générer le PDF dans un fichier temporaire
         pdf_id = str(uuid.uuid4())
         pdf_path = os.path.join(tempfile.gettempdir(), f"tijan_{pdf_id}.pdf")
-
         ingenieur = data.ingenieur or "A completer par l'ingenieur responsable"
-        generer_pdf(
-            resultat=resultat,
-            projet=projet,
-            output_path=pdf_path,
-            ingenieur=ingenieur
-        )
-
-        # Nettoyer après envoi
+        generer_pdf(resultat=resultat, projet=projet, output_path=pdf_path, ingenieur=ingenieur)
         background_tasks.add_task(nettoyer_pdf, pdf_path)
-
         nom_fichier = f"tijan_note_calcul_{projet.nom.replace(' ', '_')[:40]}.pdf"
-
         return FileResponse(
-            path=pdf_path,
-            media_type="application/pdf",
-            filename=nom_fichier,
+            path=pdf_path, media_type="application/pdf", filename=nom_fichier,
             headers={"Content-Disposition": f"attachment; filename={nom_fichier}"}
         )
-
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erreur génération PDF : {str(e)}")
+    finally:
+        gc.collect()
 
 
 @app.post("/calculate/structure-only")
 def calculer_structure(data: ProjetInput):
-    """
-    Calcul structurel uniquement — sans Edge, sans PDF.
-    Endpoint rapide pour pré-visualisation.
-    """
     try:
         projet = input_vers_projet(data)
         resultat = calculer_structure_complete(projet)
-
         return {
             "statut": "success",
             "projet_nom": resultat.projet_nom,
-            "beton": {
-                "classe": resultat.beton.classe_exposition.value,
-                "fc28_MPa": resultat.beton.fc28_MPa,
-                "fcd_MPa": resultat.beton.fcd_MPa,
-                "fyd_MPa": resultat.beton.fyd_MPa,
-                "enrobage_mm": resultat.beton.enrobage_mm,
-            },
-            "charges": {
-                "G_kNm2": resultat.descente_charges.charge_permanente_G_kNm2,
-                "Q_kNm2": resultat.descente_charges.charge_exploitation_Q_kNm2,
-                "ELU_kNm2": resultat.descente_charges.combinaison_ELU_kNm2,
-                "charge_base_kN": resultat.descente_charges.charge_totale_base_kN,
-            },
-            "voile": {
-                "epaisseur_cm": int(resultat.voile.epaisseur_retenue_m * 100),
-                "As_vertical_cm2_ml": resultat.voile.ferraillage_vertical_cm2_m,
-                "As_horizontal_cm2_ml": resultat.voile.ferraillage_horizontal_cm2_m,
-            },
-            "dalle": {
-                "epaisseur_cm": int(resultat.dalle.epaisseur_retenue_m * 100),
-                "As_inf_cm2_ml": resultat.dalle.ferraillage_inferieur_cm2_m,
-                "As_sup_cm2_ml": resultat.dalle.ferraillage_superieur_cm2_m,
-                "chapeau_requis": resultat.dalle.epaisseur_chapeau_m is not None,
-                "epaisseur_chapeau_cm": int(resultat.dalle.epaisseur_chapeau_m * 100)
-                    if resultat.dalle.epaisseur_chapeau_m else None,
-            },
-            "poteau_rdc": {
-                "section_cm": f"{int(resultat.poteau.section_b_m*100)}x{int(resultat.poteau.section_h_m*100)}",
-                "ferraillage": f"{resultat.poteau.nb_barres}HA{resultat.poteau.diametre_barres_mm}",
-                "cadres": f"HA{resultat.poteau.ferraillage_transversal_mm}/{resultat.poteau.espacement_cadres_mm}mm",
-            },
-            "poutre": {
-                "section_cm": f"{int(resultat.poutre.largeur_b_m*100)}x{int(resultat.poutre.hauteur_h_m*100)}",
-                "ferraillage_inf": f"{resultat.poutre.nb_barres_inf}HA{resultat.poutre.diametre_barres_mm}",
-                "ferraillage_sup": f"{resultat.poutre.nb_barres_sup}HA{resultat.poutre.diametre_barres_mm}",
-                "etriers": f"HA{resultat.poutre.ferraillage_transversal_mm}/{resultat.poutre.espacement_cadres_mm}mm",
-            },
-            "fondations": {
-                "type": resultat.fondations.type_fondation,
-                "justification": resultat.fondations.justification,
-                "largeur_semelle_m": resultat.fondations.largeur_semelle_m,
-                "epaisseur_radier_m": resultat.fondations.epaisseur_radier_m,
-                "diametre_pieux_m": resultat.fondations.diametre_pieux_m,
-                "longueur_pieux_m": resultat.fondations.longueur_pieux_m,
-                "nb_pieux_par_poteau": resultat.fondations.nb_pieux_par_poteau,
-            },
+            "beton": {"classe": resultat.beton.classe_exposition.value, "fc28_MPa": resultat.beton.fc28_MPa,
+                      "fcd_MPa": resultat.beton.fcd_MPa, "fyd_MPa": resultat.beton.fyd_MPa,
+                      "enrobage_mm": resultat.beton.enrobage_mm},
+            "charges": {"G_kNm2": resultat.descente_charges.charge_permanente_G_kNm2,
+                        "Q_kNm2": resultat.descente_charges.charge_exploitation_Q_kNm2,
+                        "ELU_kNm2": resultat.descente_charges.combinaison_ELU_kNm2,
+                        "charge_base_kN": resultat.descente_charges.charge_totale_base_kN},
+            "voile": {"epaisseur_cm": int(resultat.voile.epaisseur_retenue_m*100),
+                      "As_vertical_cm2_ml": resultat.voile.ferraillage_vertical_cm2_m,
+                      "As_horizontal_cm2_ml": resultat.voile.ferraillage_horizontal_cm2_m},
+            "dalle": {"epaisseur_cm": int(resultat.dalle.epaisseur_retenue_m*100),
+                      "As_inf_cm2_ml": resultat.dalle.ferraillage_inferieur_cm2_m,
+                      "As_sup_cm2_ml": resultat.dalle.ferraillage_superieur_cm2_m,
+                      "chapeau_requis": resultat.dalle.epaisseur_chapeau_m is not None,
+                      "epaisseur_chapeau_cm": int(resultat.dalle.epaisseur_chapeau_m*100) if resultat.dalle.epaisseur_chapeau_m else None},
+            "poteau_rdc": {"section_cm": f"{int(resultat.poteau.section_b_m*100)}x{int(resultat.poteau.section_h_m*100)}",
+                           "ferraillage": f"{resultat.poteau.nb_barres}HA{resultat.poteau.diametre_barres_mm}",
+                           "cadres": f"HA{resultat.poteau.ferraillage_transversal_mm}/{resultat.poteau.espacement_cadres_mm}mm"},
+            "poutre": {"section_cm": f"{int(resultat.poutre.largeur_b_m*100)}x{int(resultat.poutre.hauteur_h_m*100)}",
+                       "ferraillage_inf": f"{resultat.poutre.nb_barres_inf}HA{resultat.poutre.diametre_barres_mm}",
+                       "ferraillage_sup": f"{resultat.poutre.nb_barres_sup}HA{resultat.poutre.diametre_barres_mm}",
+                       "etriers": f"HA{resultat.poutre.ferraillage_transversal_mm}/{resultat.poutre.espacement_cadres_mm}mm"},
+            "fondations": {"type": resultat.fondations.type_fondation, "justification": resultat.fondations.justification,
+                           "largeur_semelle_m": resultat.fondations.largeur_semelle_m,
+                           "epaisseur_radier_m": resultat.fondations.epaisseur_radier_m,
+                           "diametre_pieux_m": resultat.fondations.diametre_pieux_m,
+                           "longueur_pieux_m": resultat.fondations.longueur_pieux_m,
+                           "nb_pieux_par_poteau": resultat.fondations.nb_pieux_par_poteau},
             "verifications": resultat.resume_executif.get("verifications", {}),
         }
-
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erreur calcul : {str(e)}")
+    finally:
+        gc.collect()
 
 
 @app.post("/calculate/edge-only")
 def calculer_edge(data: ProjetInput):
-    """
-    Score Edge uniquement — à partir des paramètres du projet.
-    """
     try:
         projet = input_vers_projet(data)
         resultat = calculer_structure_complete(projet)
         score = calculer_score_edge(projet, resultat)
-
-        return {
-            "statut": "success",
-            "projet_nom": data.nom,
-            "score_edge": score,
-        }
-
+        return {"statut": "success", "projet_nom": data.nom, "score_edge": score}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        gc.collect()
+
+
 from fastapi import UploadFile, File, Form
-import tempfile, shutil
+import shutil
 from parse_plans import parser_plans_architecte
 
 @app.post("/parse-plans")
@@ -426,14 +359,14 @@ async def parse_plans(
         for p in tmp_paths:
             try: os.remove(p)
             except: pass
+        gc.collect()
 
-# ── ENDPOINT IFC ──────────────────────────────
+
 from generate_ifc import generer_ifc
 from fastapi.responses import Response
 
 @app.post("/generate-ifc")
 async def generate_ifc_endpoint(projet: dict):
-    """Génère un fichier IFC structurel téléchargeable."""
     try:
         nom = projet.get("nom", "Tijan_Projet")
         contenu_ifc = generer_ifc(projet, nom)
@@ -444,8 +377,10 @@ async def generate_ifc_endpoint(projet: dict):
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        gc.collect()
 
-# ── ENDPOINT SPECKLE ──────────────────────────────────────────────────────────
+
 from generate_speckle import envoyer_sur_speckle
 
 class SpeckleRequest(BaseModel):
@@ -466,3 +401,5 @@ async def generate_speckle_endpoint(req: SpeckleRequest):
         return {"success": True, **result}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        gc.collect()
