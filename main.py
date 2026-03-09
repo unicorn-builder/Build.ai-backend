@@ -237,24 +237,64 @@ def calculer_edge(data: ProjetInput):
         gc.collect()
 
 @app.post("/parse-plans")
-async def parse_plans(files: List[UploadFile] = File(...), pression_sol_mpa: float = Form(0.12)):
-    import shutil
-    tmp_paths = []
+async def parse_plans(files: List[UploadFile] = File(...), pression_sol_mpa: float = Form(None)):
     try:
-        for f in files:
-            tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
-            shutil.copyfileobj(f.file, tmp)
-            tmp.close()
-            tmp_paths.append(tmp.name)
-        from parse_plans import parser_plans_architecte
-        resultat = parser_plans_architecte(tmp_paths, pression_sol_mpa)
-        return {"statut": "success", "data": resultat}
+        from parse_plans import parser_plans_architecturaux
+        resultat = await parser_plans_architecturaux(
+            fichiers=files,
+            pression_sol_mpa=pression_sol_mpa
+        )
+        return resultat
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erreur parsing : {str(e)}")
     finally:
-        for p in tmp_paths:
-            try: os.remove(p)
-            except: pass
+        gc.collect()
+
+@app.post("/parse-plans/preview")
+async def parse_plans_preview(files: List[UploadFile] = File(...)):
+    try:
+        from parse_plans import parser_plans_architecturaux
+        resultat = await parser_plans_architecturaux(fichiers=files)
+        return {
+            "projet": resultat.get("projet", {}),
+            "localisation": {
+                "ville": resultat.get("localisation", {}).get("ville"),
+                "pays": resultat.get("localisation", {}).get("pays"),
+                "zone_sismique": resultat.get("localisation", {}).get("zone_sismique"),
+            },
+            "geometrie": {
+                "nb_niveaux_total": resultat.get("geometrie", {}).get("nb_niveaux_total"),
+                "description_niveaux": resultat.get("geometrie", {}).get("description_niveaux"),
+                "longueur_m": resultat.get("geometrie", {}).get("longueur_m"),
+                "largeur_m": resultat.get("geometrie", {}).get("largeur_m"),
+                "surface_emprise_m2": resultat.get("geometrie", {}).get("surface_emprise_m2"),
+                "hauteur_etage_m": resultat.get("geometrie", {}).get("hauteur_etage_m"),
+            },
+            "trame": {
+                "portee_max_m": resultat.get("trame_structurelle", {}).get("portee_max_m"),
+                "portee_min_m": resultat.get("trame_structurelle", {}).get("portee_min_m"),
+                "nb_poteaux_estime": resultat.get("trame_structurelle", {}).get("nb_poteaux_estime"),
+                "description": resultat.get("trame_structurelle", {}).get("description_trame"),
+            },
+            "usage": {
+                "type_principal": resultat.get("usage", {}).get("type_principal"),
+                "nb_logements": resultat.get("usage", {}).get("nb_logements"),
+            },
+            "sol": {
+                "pression_MPa": resultat.get("parametres_eurocodes", {}).get("sol_pression_admissible_MPa"),
+                "type": resultat.get("parametres_eurocodes", {}).get("sol_type"),
+                "source": resultat.get("parametres_eurocodes", {}).get("sol_source"),
+            },
+            "confiance": resultat.get("confiance"),
+            "notes": resultat.get("notes_parser"),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erreur preview : {str(e)}")
+    finally:
         gc.collect()
 
 @app.post("/generate-ifc")
