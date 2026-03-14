@@ -41,7 +41,7 @@ def get_token() -> str:
         "client_id": APS_CLIENT_ID,
         "client_secret": APS_CLIENT_SECRET,
         "grant_type": "client_credentials",
-        "scope": "data:read data:write data:create bucket:create bucket:read",
+        "scope": "data:read data:write data:create bucket:create bucket:read bucket:update",
     }, timeout=15)
     r.raise_for_status()
     data = r.json()
