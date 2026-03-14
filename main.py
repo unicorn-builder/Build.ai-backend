@@ -450,7 +450,7 @@ async def generate_planches(
 
         result = traiter_fichier(tmp_path, overrides)
 
-        if not result["ok"] or result["niveau_output"] != "complet":
+        if not result["ok"]:
             return JSONResponse(
                 status_code=422,
                 content={
@@ -558,7 +558,7 @@ async def generate_mep(
     try:
         result = traiter_fichier(tmp_path, {"nb_niveaux": nb_niveaux} if nb_niveaux else {})
 
-        if not result["ok"] or result["niveau_output"] != "complet":
+        if not result["ok"]:
             return JSONResponse(
                 status_code=422,
                 content={
