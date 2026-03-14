@@ -24,6 +24,15 @@ Règle produit :
 """
 
 import gc
+
+# Claude Brain — lazy import
+def get_claude_brain():
+    try:
+        from claude_brain import analyser_resultats_calcul, raffiner_output, generer_synthese_projet
+        return analyser_resultats_calcul, raffiner_output, generer_synthese_projet
+    except Exception as e:
+        logger.warning(f"Claude Brain non disponible: {e}")
+        return None, None, None
 import os
 import io
 import tempfile
@@ -305,6 +314,27 @@ async def calculate(params: ParamsProjet):
         resultats = calculer_projet(donnees)
         gc.collect()
 
+
+        # Analyse Claude — cerveau intelligent
+        analyse_claude = {}
+        try:
+            analyser_fn, _, _ = get_claude_brain()
+            if analyser_fn:
+                _calcul = {
+                    "poteaux": [{"label": p.label, "NEd_kN": p.NEd_kN, "section_mm": p.section_mm,
+                                 "nb_barres": p.nb_barres, "diametre_mm": p.diametre_mm,
+                                 "taux_armature_pct": p.taux_armature_pct, "verif_ok": p.verif_ok}
+                                for p in resultats.poteaux_par_niveau],
+                    "poutre": {"b_mm": resultats.poutre_type.b_mm, "h_mm": resultats.poutre_type.h_mm,
+                               "As_inf_cm2": resultats.poutre_type.As_inf_cm2, "portee_m": resultats.poutre_type.portee_m},
+                    "fondation": {"type": resultats.fondation.type_fond, "nb_pieux": resultats.fondation.nb_pieux},
+                    "boq_resume": {"beton_m3": resultats.boq.beton_total_m3, "acier_kg": resultats.boq.acier_total_kg,
+                                   "cout_bas_FCFA": resultats.boq.cout_total_bas, "cout_haut_FCFA": resultats.boq.cout_total_haut,
+                                   "ratio_FCFA_m2": resultats.boq.ratio_fcfa_m2},
+                }
+                analyse_claude = analyser_fn(params.dict(), _calcul)
+        except Exception as e:
+            logger.warning(f"Claude analyse: {e}")
         return {
             "ok": True,
             "projet": params.nom,
@@ -340,6 +370,7 @@ async def calculate(params: ParamsProjet):
                 "longueur_pieu_m": resultats.fondation.longueur_pieu_m,
                 "As_cm2": resultats.fondation.As_cm2,
             },
+            "analyse_claude": analyse_claude,
             "boq_resume": {
                 "beton_m3": resultats.boq.beton_total_m3,
                 "acier_kg": resultats.boq.acier_total_kg,
@@ -669,6 +700,60 @@ async def dossier_complet(
     finally:
         os.unlink(tmp_path)
 
+
+
+@app.post("/refine")
+async def refine_output(request: Request):
+    """Peaufinage d output par prompt utilisateur."""
+    try:
+        body = await request.json()
+        output_existant = body.get("output_existant", {})
+        prompt_utilisateur = body.get("prompt", "")
+        contexte_projet = body.get("contexte_projet", {})
+
+        if not prompt_utilisateur:
+            raise HTTPException(status_code=400, detail="Prompt manquant")
+
+        _, raffiner_fn, _ = get_claude_brain()
+        if not raffiner_fn:
+            raise HTTPException(status_code=503, detail="Claude Brain non disponible")
+
+        result = raffiner_fn(output_existant, prompt_utilisateur, contexte_projet)
+        gc.collect()
+        return JSONResponse(content=result)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"/refine error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/synthese")
+async def synthese_projet(params: ParamsProjet):
+    """Synthese narrative du projet via Claude."""
+    try:
+        DonneesProjet, calculer_projet = get_moteur()
+        donnees = params_to_donnees(params)
+        resultats = calculer_projet(donnees)
+
+        _, _, synthese_fn = get_claude_brain()
+        if not synthese_fn:
+            raise HTTPException(status_code=503, detail="Claude Brain non disponible")
+
+        _calcul = {
+            "poteaux": [{"section_mm": p.section_mm} for p in resultats.poteaux_par_niveau],
+            "boq_resume": {"ratio_FCFA_m2": resultats.boq.ratio_fcfa_m2},
+        }
+        synthese = synthese_fn(params.dict(), _calcul)
+        gc.collect()
+        return JSONResponse(content={"ok": True, "synthese": synthese})
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"/synthese error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 # ════════════════════════════════════════════════════════════
 # ENTRÉE
