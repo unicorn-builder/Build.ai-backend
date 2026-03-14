@@ -386,15 +386,32 @@ async def generate_note(params: ParamsProjet):
     """Note de calcul PDF — disponible avec paramètres seuls"""
     try:
         DonneesProjet, calculer_projet = get_moteur()
-        generer_note = get_note()
         donnees = params_to_donnees(params)
         resultats = calculer_projet(donnees)
 
-        buf = io.BytesIO()
-        generer_note(resultats, buf)
-        pdf_bytes = buf.getvalue()
-        gc.collect()
+        # Attacher les métadonnées au résultat pour le générateur
+        resultats._nom = params.nom
+        resultats._ville = params.ville
+        resultats._surface = params.surface_emprise_m2
+        resultats._portee_max = params.portee_max_m
+        resultats._portee_min = params.portee_min_m
+        resultats._classe_beton = params.classe_beton
+        resultats._classe_acier = params.classe_acier
+        resultats._pression_sol = params.pression_sol_MPa
 
+        try:
+            from generate_note_v3 import generer_note_avec_donnees
+            buf = io.BytesIO()
+            generer_note_avec_donnees(resultats, donnees, buf)
+            pdf_bytes = buf.getvalue()
+        except Exception as e2:
+            logger.warning(f"Vrai PDF échoué ({e2}), fallback simple")
+            generer_note = get_note()
+            buf = io.BytesIO()
+            generer_note(resultats, buf)
+            pdf_bytes = buf.getvalue()
+
+        gc.collect()
         return pdf_response(
             pdf_bytes,
             f"tijan_note_{params.nom.replace(' ', '_')[:20]}.pdf"
