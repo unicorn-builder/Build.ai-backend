@@ -235,85 +235,90 @@ async def parse_fichier(
     beton: Optional[str] = Form(None),
 ):
     """
-    Parse un fichier DWG/DXF/IFC via Autodesk APS (lecture native DWG).
-    Retourne le diagnostic + géométrie extraite.
+    Parse un fichier PDF/DWG/DXF.
+    PDF : extraction via pymupdf + Claude API.
+    DWG/DXF : tentative ezdxf, sinon paramètres par défaut.
     """
     from pathlib import Path
-
     ext = Path(file.filename).suffix.lower()
-    REFUSES = {".pdf", ".jpg", ".jpeg", ".png", ".tif", ".tiff",
-               ".bmp", ".gif", ".webp", ".svg"}
-
-    if ext in REFUSES:
-        return JSONResponse(status_code=422, content={
-            "ok": False,
-            "niveau_output": "refuse",
-            "message": (
-                "✗ Format non supporté. "
-                "Fournissez un fichier DWG, DXF ou IFC. "
-                "Les PDF et images ne sont pas acceptés — "
-                "utilisez la saisie paramétrique pour les calculs sans plans."
-            )
-        })
 
     tmp_path = await save_upload(file)
     try:
         overrides = {}
         if nb_niveaux: overrides["nb_niveaux"] = nb_niveaux
-        if ville: overrides["ville"] = ville
-        if beton: overrides["beton"] = beton
+        if ville:      overrides["ville"] = ville
+        if beton:      overrides["classe_beton"] = beton
 
-        if ext in (".dwg", ".dxf"):
-            # APS — lecture native, tous formats AutoCAD
-            parser_dwg_aps = get_aps_parser()
-            result = parser_dwg_aps(tmp_path)
-            if overrides:
-                dm = result.get("donnees_moteur", {})
-                dm.update(overrides)
+        # ── PDF : pymupdf + Claude API ─────────────────────
+        if ext == ".pdf":
+            from parse_plans import extraire_params_pdf
+            result = extraire_params_pdf(tmp_path)
+            if overrides and result.get("ok"):
+                result.update(overrides)
+            return JSONResponse(content=result)
 
+        # ── DXF : ezdxf ────────────────────────────────────
+        elif ext == ".dxf":
+            try:
+                (_, _, traiter_fichier, _, _, _, _) = get_parser()
+                result = traiter_fichier(tmp_path, overrides)
+                return JSONResponse(content=result)
+            except Exception as e:
+                logger.warning(f"ezdxf failed: {e}, returning defaults")
+                return JSONResponse(content={
+                    "ok": True,
+                    "source": "defaults",
+                    "message": "DXF non parsé — paramètres par défaut",
+                    "nom": "Projet", "ville": overrides.get("ville", "Dakar"),
+                    "nb_niveaux": overrides.get("nb_niveaux", 5),
+                    "hauteur_etage_m": 3.0, "surface_emprise_m2": 500.0,
+                    "portee_max_m": 6.0, "portee_min_m": 4.5,
+                    "nb_travees_x": 4, "nb_travees_y": 3,
+                    "classe_beton": "C30/37", "classe_acier": "HA500",
+                    "pression_sol_MPa": 0.15,
+                })
+
+        # ── DWG : défauts (APS non disponible sur plan Free) ─
+        elif ext == ".dwg":
+            return JSONResponse(content={
+                "ok": True,
+                "source": "defaults",
+                "message": "DWG reçu — extraction automatique disponible prochainement. Paramètres par défaut appliqués.",
+                "nom": "Projet", "ville": overrides.get("ville", "Dakar"),
+                "nb_niveaux": overrides.get("nb_niveaux", 5),
+                "hauteur_etage_m": 3.0, "surface_emprise_m2": 500.0,
+                "portee_max_m": 6.0, "portee_min_m": 4.5,
+                "nb_travees_x": 4, "nb_travees_y": 3,
+                "classe_beton": "C30/37", "classe_acier": "HA500",
+                "pression_sol_MPa": 0.15,
+            })
+
+        # ── IFC ─────────────────────────────────────────────
         elif ext in (".ifc", ".ifczip"):
-            # IFC — ifcopenshell
-            (_, _, traiter_fichier, _, _, _, _) = get_parser()
-            result = traiter_fichier(tmp_path, overrides)
-            if result.get("geo"):
-                geo = result.pop("geo")
-                result["geometrie"] = {
-                    "projet_nom": geo.projet_nom,
-                    "emprise_x_m": round(geo.emprise_x/1000, 2),
-                    "emprise_y_m": round(geo.emprise_y/1000, 2),
-                    "nb_axes_x": len(geo.axes_x),
-                    "nb_axes_y": len(geo.axes_y),
-                    "portees_x_m": [round(p/1000, 2) for p in geo.portees_x],
-                    "portees_y_m": [round(p/1000, 2) for p in geo.portees_y],
-                    "score_qualite": geo.score_qualite,
-                }
+            try:
+                (_, _, traiter_fichier, _, _, _, _) = get_parser()
+                result = traiter_fichier(tmp_path, overrides)
+                return JSONResponse(content=result)
+            except Exception as e:
+                logger.warning(f"IFC failed: {e}")
+                return JSONResponse(status_code=422, content={
+                    "ok": False, "message": f"Erreur parsing IFC : {e}"
+                })
+
         else:
             return JSONResponse(status_code=422, content={
                 "ok": False,
-                "niveau_output": "refuse",
-                "message": f"Format '{ext}' non reconnu. Acceptés : DWG, DXF, IFC."
+                "message": f"Format '{ext}' non supporté. Acceptés : PDF, DWG, DXF, IFC."
             })
-
-        gc.collect()
-        if not result.get("ok"):
-            return JSONResponse(status_code=422, content={
-                "ok": False,
-                "niveau_output": result.get("niveau_output", "refuse"),
-                "message": result.get("message", "Erreur de parsing"),
-            })
-
-        return JSONResponse(content=result)
 
     except Exception as e:
-        logger.error(f"Erreur /parse : {e}")
-        return JSONResponse(status_code=500, content={
-            "ok": False,
-            "message": f"Erreur parsing : {str(e)[:300]}"
-        })
+        logger.error(f"/parse error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
     finally:
-        try: os.unlink(tmp_path)
-        except: pass
-        gc.collect()
+        try:
+            os.unlink(tmp_path)
+        except:
+            pass
 
 
 @app.post("/calculate")
