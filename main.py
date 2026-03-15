@@ -89,7 +89,7 @@ def get_parser():
 
 
 def get_planches_ba():
-    from generate_planches_ba_v4 import generer_dossier_ba
+    from generate_plans_v3 import generer_dossier_ba
     return generer_dossier_ba
 
 
@@ -104,7 +104,7 @@ def get_note():
 
 
 def get_boq():
-    from generate_pdf import generer_boq_structure as generer_boq
+    from generate_boq_v3 import generer_boq
     return generer_boq
 
 
