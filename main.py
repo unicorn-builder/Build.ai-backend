@@ -99,7 +99,7 @@ def get_planches_mep():
 
 
 def get_note():
-    from generate_pdf import generer_note_calcul as generer_note
+    from generate_note_v3 import generer_note
     return generer_note
 
 
