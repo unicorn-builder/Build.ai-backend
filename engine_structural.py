@@ -169,7 +169,7 @@ class ScoreEdge:
 
 @dataclass
 class NoteCalculComplete:
-    resume_executif: ResumeExecutif
+    resume_executif: dict
     voiles: NoteVoiles
     dalle: NoteDalle
     poteaux: List[NotePoteau]
