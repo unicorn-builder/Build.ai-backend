@@ -461,11 +461,8 @@ async def generate_planches(params: ParamsProjet):
         proj = {'nom': params.nom, 'ville': params.ville + ', Senegal', 'beton': params.classe_beton, 'acier': params.classe_acier, 'ref': 'TIJAN-STR', 'norme': 'EN 1992-1-1'}
         portees_x = [params.portee_max_m] * params.nb_travees_x
         portees_y = [params.portee_min_m] * params.nb_travees_y
-        generer_planches(out_path, proj=proj,
-            portees_x=portees_x, portees_y=portees_y,
-            poteaux=resultats.poteaux_par_niveau,
-            poutre=resultats.poutre_type,
-            fond=resultats.fondation)
+        params_dict = {'nom': params.nom, 'ville': params.ville, 'nb_niveaux': params.nb_niveaux, 'surface_emprise_m2': params.surface_emprise_m2, 'portee_max_m': params.portee_max_m, 'portee_min_m': params.portee_min_m, 'nb_travees_x': params.nb_travees_x, 'nb_travees_y': params.nb_travees_y, 'classe_beton': params.classe_beton, 'hauteur_etage_m': params.hauteur_etage_m}
+        generer_planches(out_path, resultats=resultats, params=params_dict)
 
         with open(out_path, "rb") as f:
             pdf_bytes = f.read()
