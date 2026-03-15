@@ -188,13 +188,13 @@ class NoteCalculComplete:
 # ADAPTATEUR v3 → anciens types
 # ══════════════════════════════════════════════════════════════
 
-def adapter_v3_vers_anciens(params_dict: dict, resultats_v3) -> tuple:
+def adapter_v3_vers_anciens(donnees_v3: dict, resultats_v3) -> tuple:
     """
     Convertit les paramètres et résultats du moteur v3
     en ProjetStructurel + NoteCalculComplete pour generate_pdf.py
     """
     # Ville
-    ville_str = params_dict.get("ville", "dakar").lower()
+    ville_str = getattr(donnees_v3, "ville", "dakar").lower()
     try:
         ville = VilleEnum(ville_str)
     except ValueError:
@@ -202,34 +202,34 @@ def adapter_v3_vers_anciens(params_dict: dict, resultats_v3) -> tuple:
 
     # ProjetStructurel
     projet = ProjetStructurel(
-        nom=params_dict.get("nom", "Projet Tijan"),
+        nom=donnees_v3.get("nom", "Projet Tijan"),
         geometrie=Geometrie(
-            nb_niveaux=params_dict.get("nb_niveaux", 5),
-            surface_emprise_m2=params_dict.get("surface_emprise_m2", 500),
-            portee_max_m=params_dict.get("portee_max_m", 6.0),
-            portee_min_m=params_dict.get("portee_min_m", 4.5),
-            hauteur_etage_m=params_dict.get("hauteur_etage_m", 3.0),
-            nb_travees_x=params_dict.get("nb_travees_x", 4),
-            nb_travees_y=params_dict.get("nb_travees_y", 3),
+            nb_niveaux=donnees_v3.get("nb_niveaux", 5),
+            surface_emprise_m2=donnees_v3.get("surface_emprise_m2", 500),
+            portee_max_m=donnees_v3.get("portee_max_m", 6.0),
+            portee_min_m=donnees_v3.get("portee_min_m", 4.5),
+            hauteur_etage_m=donnees_v3.get("hauteur_etage_m", 3.0),
+            nb_travees_x=donnees_v3.get("nb_travees_x", 4),
+            nb_travees_y=donnees_v3.get("nb_travees_y", 3),
         ),
         usage=Usage(
             usage_principal=UsageEnum.RESIDENTIEL,
             charge_toiture_kNm2=1.0,
         ),
         sol=Sol(
-            pression_admissible_MPa=params_dict.get("pression_sol_MPa", 0.15),
+            pression_admissible_MPa=donnees_v3.get("pression_sol_MPa", 0.15),
             profondeur_fondation_m=1.5,
             description="Sol latéritique — contrainte admissible "
-                        f"{params_dict.get('pression_sol_MPa', 0.15)} MPa",
+                        f"{donnees_v3.get('pression_sol_MPa', 0.15)} MPa",
         ),
         localisation=Localisation(
             ville=ville,
-            distance_mer_km=params_dict.get("distance_mer_km", 2.0),
+            distance_mer_km=donnees_v3.get("distance_mer_km", 2.0),
             zone_sismique=1,
         ),
         materiaux=Materiaux(
-            classe_beton=params_dict.get("classe_beton", "C30/37"),
-            classe_acier=params_dict.get("classe_acier", "HA500"),
+            classe_beton=donnees_v3.get("classe_beton", "C30/37"),
+            classe_acier=donnees_v3.get("classe_acier", "HA500"),
         ),
     )
 
@@ -238,7 +238,7 @@ def adapter_v3_vers_anciens(params_dict: dict, resultats_v3) -> tuple:
 
     # Résumé exécutif
     elements = []
-    beton_str = params_dict.get("classe_beton", "C30/37")
+    beton_str = donnees_v3.get("classe_beton", "C30/37")
     elements.append(ElementResume(f"Béton / Exposition", f"{beton_str} — Exposition XS1", "OK"))
     elements.append(ElementResume("Enrobage nominal", "40 mm", "OK"))
 
@@ -312,8 +312,8 @@ def adapter_v3_vers_anciens(params_dict: dict, resultats_v3) -> tuple:
     )
 
     # Note complète
-    surface_totale = (params_dict.get("surface_emprise_m2", 500) *
-                      params_dict.get("nb_niveaux", 5))
+    surface_totale = (donnees_v3.get("surface_emprise_m2", 500) *
+                      donnees_v3.get("nb_niveaux", 5))
 
     note = NoteCalculComplete(
         resume_executif=resume,
