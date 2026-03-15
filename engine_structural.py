@@ -202,34 +202,34 @@ def adapter_v3_vers_anciens(donnees_v3: dict, resultats_v3) -> tuple:
 
     # ProjetStructurel
     projet = ProjetStructurel(
-        nom=donnees_v3.get("nom", "Projet Tijan"),
+        nom=getattr(donnees_v3, "nom", "Projet Tijan"),
         geometrie=Geometrie(
-            nb_niveaux=donnees_v3.get("nb_niveaux", 5),
-            surface_emprise_m2=donnees_v3.get("surface_emprise_m2", 500),
-            portee_max_m=donnees_v3.get("portee_max_m", 6.0),
-            portee_min_m=donnees_v3.get("portee_min_m", 4.5),
-            hauteur_etage_m=donnees_v3.get("hauteur_etage_m", 3.0),
-            nb_travees_x=donnees_v3.get("nb_travees_x", 4),
-            nb_travees_y=donnees_v3.get("nb_travees_y", 3),
+            nb_niveaux=getattr(donnees_v3, "nb_niveaux", 5),
+            surface_emprise_m2=getattr(donnees_v3, "surface_emprise_m2", 500),
+            portee_max_m=getattr(donnees_v3, "portee_max_m", 6.0),
+            portee_min_m=getattr(donnees_v3, "portee_min_m", 4.5),
+            hauteur_etage_m=getattr(donnees_v3, "hauteur_etage_m", 3.0),
+            nb_travees_x=getattr(donnees_v3, "nb_travees_x", 4),
+            nb_travees_y=getattr(donnees_v3, "nb_travees_y", 3),
         ),
         usage=Usage(
             usage_principal=UsageEnum.RESIDENTIEL,
             charge_toiture_kNm2=1.0,
         ),
         sol=Sol(
-            pression_admissible_MPa=donnees_v3.get("pression_sol_MPa", 0.15),
+            pression_admissible_MPa=getattr(donnees_v3, "pression_sol_MPa", 0.15),
             profondeur_fondation_m=1.5,
             description="Sol latéritique — contrainte admissible "
                         f"{donnees_v3.get('pression_sol_MPa', 0.15)} MPa",
         ),
         localisation=Localisation(
             ville=ville,
-            distance_mer_km=donnees_v3.get("distance_mer_km", 2.0),
+            distance_mer_km=getattr(donnees_v3, "distance_mer_km", 2.0),
             zone_sismique=1,
         ),
         materiaux=Materiaux(
-            classe_beton=donnees_v3.get("classe_beton", "C30/37"),
-            classe_acier=donnees_v3.get("classe_acier", "HA500"),
+            classe_beton=getattr(donnees_v3, "classe_beton", "C30/37"),
+            classe_acier=getattr(donnees_v3, "classe_acier", "HA500"),
         ),
     )
 
@@ -238,7 +238,7 @@ def adapter_v3_vers_anciens(donnees_v3: dict, resultats_v3) -> tuple:
 
     # Résumé exécutif
     elements = []
-    beton_str = donnees_v3.get("classe_beton", "C30/37")
+    beton_str = getattr(donnees_v3, "classe_beton", "C30/37")
     elements.append(ElementResume(f"Béton / Exposition", f"{beton_str} — Exposition XS1", "OK"))
     elements.append(ElementResume("Enrobage nominal", "40 mm", "OK"))
 
@@ -312,8 +312,8 @@ def adapter_v3_vers_anciens(donnees_v3: dict, resultats_v3) -> tuple:
     )
 
     # Note complète
-    surface_totale = (donnees_v3.get("surface_emprise_m2", 500) *
-                      donnees_v3.get("nb_niveaux", 5))
+    surface_totale = (getattr(donnees_v3, "surface_emprise_m2", 500) *
+                      getattr(donnees_v3, "nb_niveaux", 5))
 
     note = NoteCalculComplete(
         resume_executif=resume,
