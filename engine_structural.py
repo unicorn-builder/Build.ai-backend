@@ -332,3 +332,4 @@ def adapter_v3_vers_anciens(donnees_v3: dict, resultats_v3) -> tuple:
     )
 
     return projet, note
+# v1773535002
