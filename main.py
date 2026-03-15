@@ -102,6 +102,15 @@ def get_note():
     from generate_note_v3 import generer_note
     return generer_note
 
+def get_fiches_structure():
+    from generate_fiches_structure_v3 import generer_fiches_structure
+    return generer_fiches_structure
+
+def get_note_mep():
+    from generate_note_mep_v3 import generer_note_mep
+    return generer_note_mep
+
+
 
 def get_boq():
     from generate_boq_v3 import generer_boq
@@ -661,6 +670,42 @@ async def synthese_projet(params: ParamsProjet):
         raise
     except Exception as e:
         logger.error(f"/synthese error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/generate-fiches-structure")
+async def generate_fiches_structure(params: ParamsProjet):
+    """Fiches techniques materiaux structure PDF"""
+    try:
+        DonneesProjet, calculer_projet = get_moteur()
+        generer = get_fiches_structure()
+        donnees = params_to_donnees(params)
+        resultats = calculer_projet(donnees)
+        buf = io.BytesIO()
+        generer(resultats, buf, params.dict())
+        pdf_bytes = buf.getvalue()
+        gc.collect()
+        return pdf_response(pdf_bytes, f"tijan_fiches_structure_{params.nom.replace(' ','_')[:20]}.pdf")
+    except Exception as e:
+        logger.error(f"/generate-fiches-structure error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/generate-note-mep")
+async def generate_note_mep(params: ParamsProjet):
+    """Note de calcul MEP & Automation PDF"""
+    try:
+        DonneesProjet, calculer_projet = get_moteur()
+        generer = get_note_mep()
+        donnees = params_to_donnees(params)
+        resultats = calculer_projet(donnees)
+        buf = io.BytesIO()
+        generer(resultats, buf, params.dict())
+        pdf_bytes = buf.getvalue()
+        gc.collect()
+        return pdf_response(pdf_bytes, f"tijan_note_mep_{params.nom.replace(' ','_')[:20]}.pdf")
+    except Exception as e:
+        logger.error(f"/generate-note-mep error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 # ════════════════════════════════════════════════════════════
