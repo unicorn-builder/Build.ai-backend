@@ -366,7 +366,7 @@ def generer_note_structure(resultats: dict, params: dict) -> bytes:
 # ── POINT D'ENTRÉE BACKEND ────────────────────────────────────
 def generer(params: dict) -> bytes:
     """Appelé depuis main.py via get_generateur()"""
-    from engine_structural_v3 import DonneesProjet, calculer
+    from engine_structural_v3 import DonneesProjet, calculer_projet as calculer
     d = DonneesProjet(
         nom=params.get("nom", "Projet"),
         ville=params.get("ville", "Dakar"),
