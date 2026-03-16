@@ -313,10 +313,13 @@ def generer(params: dict) -> bytes:
     res_dict = dataclasses.asdict(res)
 
     # Extraire données
-    poteaux  = res_dict.get('poteaux', [])
-    fondation = res_dict.get('fondation', {})
-    boq_raw  = res_dict.get('boq', {})
-    analyse  = res_dict.get('analyse_claude', {})
+    poteaux  = res_dict.get('poteaux_par_niveau', []) or []
+    fondation = res_dict.get('fondation', {}) or {}
+    boq_raw  = res_dict.get('boq', {}) or {}
+    analyse  = res_dict.get('analyse_claude', {}) or {}
+    # Debug
+    import sys
+    print(f"DEBUG poteaux: {len(poteaux)} items", file=sys.stderr)
 
     beton_m3 = boq_raw.get('beton_total_m3', 0) if boq_raw else 0
     acier_kg = boq_raw.get('acier_total_kg', 0) if boq_raw else 0
