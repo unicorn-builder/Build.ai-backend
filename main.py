@@ -415,17 +415,8 @@ async def generate_note(params: ParamsProjet):
         resultats._classe_acier = params.classe_acier
         resultats._pression_sol = params.pression_sol_MPa
 
-        try:
-            from generate_pdf_v4 import generer as generer_note_avec_donnees
-            buf = io.BytesIO()
-            generer_note_avec_donnees(resultats, donnees, buf)
-            pdf_bytes = buf.getvalue()
-        except Exception as e2:
-            logger.warning(f"Vrai PDF échoué ({e2}), fallback simple")
-            generer_note = get_note()
-            buf = io.BytesIO()
-            generer_note(resultats, buf)
-            pdf_bytes = buf.getvalue()
+        from generate_pdf_v4 import generer as generer_v4
+        pdf_bytes = generer_v4(params.dict())
 
         gc.collect()
         return pdf_response(
