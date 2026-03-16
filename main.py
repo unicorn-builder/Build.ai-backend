@@ -876,3 +876,4 @@ async def generate_edge(params: ParamsProjet):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+# redeploy 1773678828
