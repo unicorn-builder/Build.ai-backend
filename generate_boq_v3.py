@@ -354,4 +354,3 @@ def generer_boq(resultats, buf, params_dict=None):
         styles['disclaimer']))
 
     doc.build(story, onFirstPage=hf, onLaterPages=hf)
-# Sun Mar 15 11:22:17 GMT 2026
