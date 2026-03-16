@@ -235,81 +235,25 @@ async def parse_fichier(
     beton: Optional[str] = Form(None),
 ):
     """
-    Parse un fichier PDF/DWG/DXF.
-    PDF : extraction via pymupdf + Claude API.
-    DWG/DXF : tentative ezdxf, sinon paramètres par défaut.
+    Parse universel : PDF vectoriel, PDF scanne, DWG, DXF.
+    PDF vectoriel  -> pymupdf + Claude API texte
+    PDF scanne     -> pymupdf image + Claude API vision
+    DWG/DXF        -> ezdxf + Claude API interpretation
     """
+    from parse_plans import extraire_params
     from pathlib import Path
-    ext = Path(file.filename).suffix.lower()
 
     tmp_path = await save_upload(file)
     try:
-        overrides = {}
-        if nb_niveaux: overrides["nb_niveaux"] = nb_niveaux
-        if ville:      overrides["ville"] = ville
-        if beton:      overrides["classe_beton"] = beton
+        result = extraire_params(tmp_path)
 
-        # ── PDF : pymupdf + Claude API ─────────────────────
-        if ext == ".pdf":
-            from parse_plans import extraire_params_pdf
-            result = extraire_params_pdf(tmp_path)
-            if overrides and result.get("ok"):
-                result.update(overrides)
-            return JSONResponse(content=result)
+        # Appliquer les overrides manuels si fournis
+        if result.get("ok"):
+            if nb_niveaux: result["nb_niveaux"] = nb_niveaux
+            if ville:      result["ville"]       = ville
+            if beton:      result["classe_beton"] = beton
 
-        # ── DXF : ezdxf ────────────────────────────────────
-        elif ext == ".dxf":
-            try:
-                (_, _, traiter_fichier, _, _, _, _) = get_parser()
-                result = traiter_fichier(tmp_path, overrides)
-                return JSONResponse(content=result)
-            except Exception as e:
-                logger.warning(f"ezdxf failed: {e}, returning defaults")
-                return JSONResponse(content={
-                    "ok": True,
-                    "source": "defaults",
-                    "message": "DXF non parsé — paramètres par défaut",
-                    "nom": "Projet", "ville": overrides.get("ville", "Dakar"),
-                    "nb_niveaux": overrides.get("nb_niveaux", 5),
-                    "hauteur_etage_m": 3.0, "surface_emprise_m2": 500.0,
-                    "portee_max_m": 6.0, "portee_min_m": 4.5,
-                    "nb_travees_x": 4, "nb_travees_y": 3,
-                    "classe_beton": "C30/37", "classe_acier": "HA500",
-                    "pression_sol_MPa": 0.15,
-                })
-
-        # ── DWG : défauts (APS non disponible sur plan Free) ─
-        elif ext == ".dwg":
-            return JSONResponse(content={
-                "ok": True,
-                "source": "defaults",
-                "message": "DWG reçu — extraction automatique disponible prochainement. Paramètres par défaut appliqués.",
-                "nom": "Projet", "ville": overrides.get("ville", "Dakar"),
-                "nb_niveaux": overrides.get("nb_niveaux", 5),
-                "hauteur_etage_m": 3.0, "surface_emprise_m2": 500.0,
-                "portee_max_m": 6.0, "portee_min_m": 4.5,
-                "nb_travees_x": 4, "nb_travees_y": 3,
-                "classe_beton": "C30/37", "classe_acier": "HA500",
-                "pression_sol_MPa": 0.15,
-            })
-
-        # ── IFC ─────────────────────────────────────────────
-        elif ext in (".ifc", ".ifczip"):
-            try:
-                (_, _, traiter_fichier, _, _, _, _) = get_parser()
-                result = traiter_fichier(tmp_path, overrides)
-                return JSONResponse(content=result)
-            except Exception as e:
-                logger.warning(f"IFC failed: {e}")
-                return JSONResponse(status_code=422, content={
-                    "ok": False, "message": f"Erreur parsing IFC : {e}"
-                })
-
-        else:
-            return JSONResponse(status_code=422, content={
-                "ok": False,
-                "message": f"Format '{ext}' non supporté. Acceptés : PDF, DWG, DXF, IFC."
-            })
+        return JSONResponse(content=result)
 
     except Exception as e:
         logger.error(f"/parse error: {e}")
@@ -317,7 +261,7 @@ async def parse_fichier(
     finally:
         try:
             os.unlink(tmp_path)
-        except:
+        except Exception:
             pass
 
 
