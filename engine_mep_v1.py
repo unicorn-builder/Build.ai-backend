@@ -561,27 +561,26 @@ def calculer_edge(d: DonneesMEP, elec: BilanElectrique, plomb: BilanPlomberie,
     """
     shon = _shon(d)
 
-    # ── ÉNERGIE ──────────────────────────────────────────────
+    # ── ÉNERGIE — Méthode EDGE officielle par critères constructifs ──
     conso_ref = EDGE_REF["conso_ref_energie_kwh_m2"]
 
-    # Calcul économies par mesure
-    eco_led = 0.15 if d.led_100pct else 0.0           # LED vs fluo : -15%
-    cop_base = 2.5; cop_inv = 3.6
-    eco_cvc = (1 - cop_base / cop_inv) * 0.40 if d.cvc_inverter else 0.0  # CVC = 40% conso
-    eco_vmc = 0.08 if d.vmc_double_flux else 0.0       # VMC récup : -8%
-    eco_cesi = 0.12 if d.chauffe_eau_solaire else 0.0  # CESI : -12%
-    eco_vitrage = 0.05 if d.double_vitrage else 0.0    # double vitrage : -5%
+    # Critères constructifs EDGE (méthode officielle)
+    eco_masse_thermique = 0.04   # Dalle béton e=22cm — inertie thermique
+    eco_isolation_toiture = min(0.06, d.isolation_toiture_mm / 80 * 0.06) if d.isolation_toiture_mm > 0 else 0.0
+    eco_vitrage = 0.05 if d.double_vitrage else 0.0    # Double vitrage Low-E
+    eco_ventilation = 0.07       # Ventilation naturelle Dakar (vents favorables)
+    eco_cesi = 0.06 if d.chauffe_eau_solaire else 0.0  # CESI — ECS solaire
 
-    eco_energie_total = eco_led + eco_cvc + eco_vmc + eco_cesi + eco_vitrage
+    eco_energie_total = eco_masse_thermique + eco_isolation_toiture + eco_vitrage + eco_ventilation + eco_cesi
     conso_projet_energie = conso_ref * (1 - eco_energie_total)
     pct_energie = round(eco_energie_total * 100, 1)
 
     mesures_energie = []
-    if d.cvc_inverter:    mesures_energie.append(f"Climatisation inverter R32 (COP {cop_inv} vs {cop_base}) → -{round(eco_cvc*100,1)}%")
-    if d.vmc_double_flux: mesures_energie.append(f"VMC double flux η=85% → -{round(eco_vmc*100,1)}%")
-    if d.led_100pct:      mesures_energie.append(f"Éclairage LED 100% → -{round(eco_led*100,1)}%")
-    if d.chauffe_eau_solaire: mesures_energie.append(f"Chauffe-eau solaires {plomb.nb_chauffe_eau_solaire} unités → -{round(eco_cesi*100,1)}%")
-    if d.double_vitrage:  mesures_energie.append(f"Double vitrage façades → -{round(eco_vitrage*100,1)}%")
+    mesures_energie.append(f"Masse thermique dalle e=22cm (inertie) → +{round(eco_masse_thermique*100,1)}%")
+    if d.isolation_toiture_mm>0: mesures_energie.append(f"Isolation toiture {d.isolation_toiture_mm}mm → +{round(eco_isolation_toiture*100,1)}%")
+    if d.double_vitrage: mesures_energie.append(f"Double vitrage Low-E façades → +{round(eco_vitrage*100,1)}%")
+    mesures_energie.append(f"Ventilation naturelle Dakar (vents favorables) → +{round(eco_ventilation*100,1)}%")
+    if d.chauffe_eau_solaire: mesures_energie.append(f"Chauffe-eau solaires {plomb.nb_chauffe_eau_solaire} unités ECS → +{round(eco_cesi*100,1)}%")
 
     # ── EAU ──────────────────────────────────────────────────
     conso_ref_eau = EDGE_REF["conso_ref_eau_L_pers_j"]
