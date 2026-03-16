@@ -105,7 +105,7 @@ def get_planches_mep():
 
 
 def get_note():
-    from generate_note_v4_final import generer as generer_note
+    from generate_note_v5_8pages import generer as generer_note
     return generer_note
 
 def get_fiches_structure():
