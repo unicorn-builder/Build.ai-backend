@@ -730,3 +730,4 @@ def generer_note_avec_donnees(resultats, donnees_v3, buf):
     with open(tmp_path, 'rb') as f:
         buf.write(f.read())
     os.unlink(tmp_path)
+# v1773657494
