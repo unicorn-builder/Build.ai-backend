@@ -566,7 +566,7 @@ def calculer_edge(d: DonneesMEP, elec: BilanElectrique, plomb: BilanPlomberie,
     shon = _shon(d)
 
     # Masse thermique : fonction de l'épaisseur de dalle (liée à la portée)
-    ep_dalle = max(d.portee_max_m / 35, 0.15)  # épaisseur dalle réelle
+    ep_dalle = max(0.20, 0.15 + d.nb_niveaux * 0.005)  # épaisseur dalle réelle
     eco_masse_thermique = min(0.06, ep_dalle / 0.22 * 0.04)  # proportionnel à l'épaisseur
 
     # Ventilation naturelle : dépend du ratio surface/volume et nb niveaux
