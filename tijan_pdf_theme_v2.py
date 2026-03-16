@@ -198,7 +198,7 @@ def draw_header_footer(canvas, doc, projet, doc_type, ref=""):
 def creer_doc(buffer, projet, doc_type, ref=""):
     """Crée un SimpleDocTemplate paysage avec header/footer automatiques"""
 
-    def on_page(canvas, doc=None):
+    def on_page(canvas, doc):
         draw_header_footer(canvas, doc, projet, doc_type, ref)
 
     doc = SimpleDocTemplate(
@@ -212,7 +212,6 @@ def creer_doc(buffer, projet, doc_type, ref=""):
         author="Tijan AI",
         subject="Engineering Intelligence for Africa",
     )
-    doc._onPage = on_page
     return doc, on_page
 
 # ── HELPERS ───────────────────────────────────────────────────
