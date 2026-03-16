@@ -359,7 +359,7 @@ def generer_note_structure(resultats: dict, params: dict) -> bytes:
         "À affiner avec les métrés architecte définitifs.",
         S['small']))
 
-    doc.build(story, onFirstPage=on_page, onLaterPages=on_page)
+    doc.build(story)
     return buf.getvalue()
 
 
