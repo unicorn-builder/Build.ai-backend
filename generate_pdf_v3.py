@@ -8,6 +8,12 @@ Charte : blanc/noir/gris, touches vert #43A956
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
 from reportlab.lib.units import mm
+import os as _os
+_HERE = _os.path.dirname(_os.path.abspath(__file__))
+_LOGO = None
+for _c in [_os.path.join(_HERE,'tijan_logo_crop.png'), '/opt/render/project/src/tijan_logo_crop.png']:
+    if _os.path.exists(_c): _LOGO = _c; break
+
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT, TA_JUSTIFY
 from reportlab.platypus import (
@@ -128,7 +134,20 @@ def build_header_footer(canvas, doc, nom_projet, date_str):
     # Header
     canvas.setFillColor(VERT)
     canvas.setFont('Helvetica-Bold', 8)
-    canvas.drawString(15*mm, h - 12*mm, "TIJAN AI")
+    if _LOGO:
+        try:
+            canvas.drawImage(_LOGO, 15*mm, h-13*mm, width=32*mm, height=7*mm, preserveAspectRatio=True, mask='auto')
+        except:
+            canvas.setFont('Helvetica-Bold', 9)
+            canvas.setFillColor(colors.HexColor('#43A956'))
+            canvas.drawString(15*mm, h-11*mm, "TIJAN AI")
+    else:
+        canvas.setFont('Helvetica-Bold', 9)
+        canvas.setFillColor(colors.HexColor('#43A956'))
+        canvas.drawString(15*mm, h-11*mm, "TIJAN AI")
+    canvas.setFont('Helvetica', 6)
+    canvas.setFillColor(colors.HexColor('#888888'))
+    canvas.drawString(15*mm, h-15*mm, "Engineering Intelligence for Africa")
     canvas.setFillColor(GRIS)
     canvas.setFont('Helvetica', 7.5)
     canvas.drawString(15*mm, h - 17*mm, f"{nom_projet}  —  Note de calcul structurelle  —  Eurocodes EN 1990 / EN 1991 / EN 1992 / EN 1997")
