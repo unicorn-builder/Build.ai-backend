@@ -821,7 +821,7 @@ def _calculer_automatisation(d: DonneesProjet, shon: float,
 def _calculer_edge(d: DonneesProjet, shon: float,
                     nb_logements: int, nb_personnes: int,
                     elec: BilanElectrique, plomb: BilanPlomberie,
-                    cvc: BilanCVC, struct_boq=None) -> ScoreEDGE:
+                    cvc: BilanCVC, struct_boq=None, edge_optimise: bool = False) -> ScoreEDGE:
     """
     Calcul scores EDGE réels depuis données projet.
     Référence IFC EDGE Standard v3 — Sénégal/Afrique Subsaharienne.
