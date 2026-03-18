@@ -570,6 +570,64 @@ async def chat_projet(request: Request):
         logger.error(f"/chat error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
+@app.post("/calculate-mep-edge")
+async def calculate_mep_edge_optimise(params: ParamsProjet):
+    """Recalcul MEP avec toutes les mesures EDGE activées."""
+    try:
+        _, _, calculer_structure = get_moteur_structure()
+        calculer_mep = get_moteur_mep()
+        donnees = params_to_donnees(params)
+        rs = calculer_structure(donnees)
+        rm = calculer_mep(donnees, rs, edge_optimise=True)
+        gc.collect()
+
+        e = rm.edge
+        boqm = rm.boq
+
+        # Calculer surcoût EDGE
+        # Coût mesures : LED + isolation + WC + robinetterie
+        surf_batie = rm.surf_batie_m2
+        cout_led   = int(surf_batie * 3500)
+        cout_iso   = int(donnees.surface_emprise_m2 * 8500)
+        cout_wc    = rm.plomberie.nb_wc_double_chasse * 45000
+        cout_rob   = rm.plomberie.nb_robinets_eco * 30000
+        surcout_total = cout_led + cout_iso + cout_wc + cout_rob
+
+        return {
+            "ok": True,
+            "edge_optimise": True,
+            "projet": params.nom,
+            "surf_batie_m2": surf_batie,
+            "edge": {
+                "economie_energie_pct": e.economie_energie_pct,
+                "economie_eau_pct": e.economie_eau_pct,
+                "economie_materiaux_pct": e.economie_materiaux_pct,
+                "certifiable": e.certifiable,
+                "niveau_certification": e.niveau_certification,
+                "mesures_energie": e.mesures_energie,
+                "mesures_eau": e.mesures_eau,
+                "mesures_materiaux": e.mesures_materiaux,
+                "note_generale": e.note_generale,
+            },
+            "surcout_edge": {
+                "led_fcfa": cout_led,
+                "isolation_fcfa": cout_iso,
+                "wc_fcfa": cout_wc,
+                "robinetterie_fcfa": cout_rob,
+                "total_fcfa": surcout_total,
+                "pct_boq_mep": round(surcout_total / max(boqm.total_basic_fcfa, 1) * 100, 1),
+            },
+            "boq_mep": {
+                "basic_fcfa": boqm.total_basic_fcfa,
+                "hend_fcfa": boqm.total_hend_fcfa,
+                "luxury_fcfa": boqm.total_luxury_fcfa,
+            },
+        }
+    except Exception as e:
+        logger.error(f"/calculate-mep-edge error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 # ════════════════════════════════════════════════════════════
 # ENTRÉE
 # ════════════════════════════════════════════════════════════
