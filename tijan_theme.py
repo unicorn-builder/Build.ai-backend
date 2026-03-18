@@ -1,306 +1,199 @@
 """
-Tijan AI — Charte graphique v4
-Sobre, minimaliste, professionnelle.
-Une seule couleur d'accent (vert Tijan).
-Tout le reste : noir, blanc, gris.
+tijan_theme.py — Thème PDF partagé Tijan AI
+Toutes les couleurs, styles, header/footer en un seul endroit.
+Tous les générateurs importent depuis ici.
 """
+import os
+from datetime import datetime
 from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
+from reportlab.lib.styles import ParagraphStyle
+from reportlab.lib.enums import TA_CENTER, TA_RIGHT, TA_LEFT, TA_JUSTIFY
+from reportlab.platypus import Table, TableStyle, Paragraph, HRFlowable, Spacer
 
-# ── Palette ─────────────────────────────────────────────────
-TIJAN_VERT    = colors.HexColor("#3A8C4E")   # accent principal — utilisé avec parcimonie
-TIJAN_VERT_F  = colors.HexColor("#2A6438")   # variante foncée (titres)
-NOIR          = colors.HexColor("#111111")
-GRIS_FORT     = colors.HexColor("#444444")
-GRIS_MOY      = colors.HexColor("#888888")
-GRIS_CLAIR    = colors.HexColor("#CCCCCC")
-GRIS_FOND     = colors.HexColor("#F4F4F2")
-GRIS_ALT      = colors.HexColor("#EBEBEB")   # alternance lignes tableau
-BLANC         = colors.white
+# ── Couleurs ──────────────────────────────────────────────────
+VERT        = colors.HexColor('#43A956')
+VERT_LIGHT  = colors.HexColor('#EBF7ED')
+VERT_DARK   = colors.HexColor('#2D7A3A')
+NOIR        = colors.HexColor('#111111')
+GRIS1       = colors.HexColor('#F5F5F5')
+GRIS2       = colors.HexColor('#E5E5E5')
+GRIS3       = colors.HexColor('#888888')
+BLANC       = colors.white
+ORANGE      = colors.HexColor('#E07B00')
+ORANGE_LT   = colors.HexColor('#FFF3E0')
+BLEU        = colors.HexColor('#1565C0')
+BLEU_LT     = colors.HexColor('#E3F2FD')
+ROUGE       = colors.HexColor('#DC2626')
 
-# Couleurs MEP — discrètes, monochromes différenciés par épaisseur + tirets
-MEP_EF        = colors.HexColor("#2255AA")   # eau froide — bleu foncé
-MEP_EC        = colors.HexColor("#AA4422")   # eau chaude — brun
-MEP_EU        = colors.HexColor("#666666")   # eaux usées — gris
-MEP_EP        = colors.HexColor("#444488")   # eaux pluviales — ardoise
-MEP_ELEC      = colors.HexColor("#111111")   # électricité — noir
-MEP_HVAC      = colors.HexColor("#336666")   # climatisation — gris-vert
+PAGE = A4
+W, H = PAGE
+ML = 18 * mm
+MR = 18 * mm
+CW = W - ML - MR
 
-# ── Traits ──────────────────────────────────────────────────
-LW_GROS       = 1.4    # contours béton, murs
-LW_MOYEN      = 0.8    # éléments principaux
-LW_FIN        = 0.4    # axes, cotes, secondaires
-LW_TRES_FIN   = 0.2    # hachures
+# ── Logo ──────────────────────────────────────────────────────
+def get_logo():
+    here = os.path.dirname(os.path.abspath(__file__))
+    for name in ['tijan_logo_crop.png', 'tijan_logo.png']:
+        path = os.path.join(here, name)
+        if os.path.exists(path):
+            return path
+    return None
 
-# ── Typographie ─────────────────────────────────────────────
-FONT_TITRE    = "Helvetica-Bold"
-FONT_SOUS     = "Helvetica"
-FONT_MONO     = "Courier"
+# ── Styles ────────────────────────────────────────────────────
+def make_styles():
+    return {
+        'titre':     ParagraphStyle('titre',     fontName='Helvetica-Bold', fontSize=22, textColor=NOIR, spaceAfter=4, leading=26),
+        'sous_titre':ParagraphStyle('sous_titre',fontName='Helvetica',      fontSize=12, textColor=GRIS3, spaceAfter=3),
+        'h1':        ParagraphStyle('h1',        fontName='Helvetica-Bold', fontSize=10, textColor=VERT,  spaceBefore=6, spaceAfter=3),
+        'h2':        ParagraphStyle('h2',        fontName='Helvetica-Bold', fontSize=9,  textColor=VERT_DARK, spaceBefore=4, spaceAfter=2),
+        'body':      ParagraphStyle('body',      fontName='Helvetica',      fontSize=8.5,textColor=NOIR,  leading=12, spaceAfter=2),
+        'body_j':    ParagraphStyle('body_j',    fontName='Helvetica',      fontSize=8.5,textColor=NOIR,  leading=12, spaceAfter=2, alignment=TA_JUSTIFY),
+        'small':     ParagraphStyle('small',     fontName='Helvetica',      fontSize=7,  textColor=GRIS3, leading=9),
+        'note':      ParagraphStyle('note',      fontName='Helvetica-Oblique', fontSize=7.5, textColor=ORANGE, leading=10),
+        'th':        ParagraphStyle('th',        fontName='Helvetica-Bold', fontSize=7.5,textColor=BLANC, alignment=TA_CENTER, leading=10),
+        'th_l':      ParagraphStyle('th_l',      fontName='Helvetica-Bold', fontSize=7.5,textColor=BLANC, alignment=TA_LEFT,   leading=10),
+        'td':        ParagraphStyle('td',        fontName='Helvetica',      fontSize=7.5,textColor=NOIR,  leading=10, wordWrap='LTR'),
+        'td_r':      ParagraphStyle('td_r',      fontName='Helvetica',      fontSize=7.5,textColor=NOIR,  leading=10, alignment=TA_RIGHT),
+        'td_b':      ParagraphStyle('td_b',      fontName='Helvetica-Bold', fontSize=7.5,textColor=NOIR,  leading=10),
+        'td_b_r':    ParagraphStyle('td_b_r',    fontName='Helvetica-Bold', fontSize=7.5,textColor=NOIR,  leading=10, alignment=TA_RIGHT),
+        'td_g':      ParagraphStyle('td_g',      fontName='Helvetica-Bold', fontSize=7.5,textColor=VERT,  leading=10),
+        'td_g_r':    ParagraphStyle('td_g_r',    fontName='Helvetica-Bold', fontSize=7.5,textColor=VERT,  leading=10, alignment=TA_RIGHT),
+        'td_o':      ParagraphStyle('td_o',      fontName='Helvetica-Bold', fontSize=7.5,textColor=ORANGE,leading=10),
+        'ok':        ParagraphStyle('ok',        fontName='Helvetica-Bold', fontSize=7.5,textColor=VERT,  leading=10, alignment=TA_CENTER),
+        'nok':       ParagraphStyle('nok',       fontName='Helvetica-Bold', fontSize=7.5,textColor=ORANGE,leading=10, alignment=TA_CENTER),
+        'disc':      ParagraphStyle('disc',      fontName='Helvetica-Oblique', fontSize=6.5, textColor=GRIS3, leading=9),
+        'bleu':      ParagraphStyle('bleu',      fontName='Helvetica-Oblique', fontSize=8.5, textColor=BLEU, leading=12),
+    }
 
-FS_GRAND      = 9
-FS_NORMAL     = 7
-FS_PETIT      = 6
-FS_MICRO      = 5
+S = make_styles()
 
-# ── Layout A3 paysage ────────────────────────────────────────
-from reportlab.lib.pagesizes import A3, landscape
-A3L = landscape(A3)
-W, H = A3L   # 841.9 × 595.3 pts
+# ── Helpers ───────────────────────────────────────────────────
+def p(txt, style='td'):
+    return Paragraph(str(txt) if txt is not None else '—', S[style])
 
-# Marges
-ML = 14*mm; MR = 8*mm; MT = 8*mm; MB = 14*mm
+def fmt_fcfa(v):
+    try:
+        v = float(v)
+        if v == 0: return '—'
+        if v >= 1e9: return f'{v/1e9:.2f} Mds FCFA'
+        if v >= 1e6: return f'{v/1e6:.1f} M FCFA'
+        return f'{int(v):,} FCFA'.replace(',', ' ')
+    except: return '—'
 
-# Cartouche droite
-CART_W = 64*mm
-CART_H = H - MT - MB
+def fmt_n(v, dec=0, unit=''):
+    try:
+        v = float(v)
+        s = f'{v:.{dec}f}' if dec else f'{int(round(v)):,}'.replace(',', ' ')
+        return f'{s} {unit}'.strip() if unit else s
+    except: return '—'
 
-# Zone dessin
-DX = ML
-DY = MB
-DW = W - ML - MR - CART_W - 4*mm
-DH = H - MT - MB
-
-# Bandeau titre (dans la zone dessin, haut)
-TITRE_H = 10*mm
-
-
-def set_trait(c, lw, color=NOIR, dash=None):
-    c.setStrokeColor(color)
-    c.setLineWidth(lw)
-    if dash:
-        c.setDash(dash[0], dash[1])
-    else:
-        c.setDash()
-
-
-def clip_rect(c, x, y, w, h):
-    """Activer le clipping sur un rectangle — tout ce qui est dessiné ensuite est clipé"""
-    p = c.beginPath()
-    p.rect(x, y, w, h)
-    c.clipPath(p, stroke=0, fill=0)
-
-
-def texte_clippe(c, texte, x, y, x_max, font=FONT_SOUS, size=FS_PETIT, color=NOIR):
-    """Dessine un texte tronqué avec '…' s'il dépasse x_max"""
-    c.setFont(font, size)
-    c.setFillColor(color)
-    # Estimer largeur (approx 0.55 × size par caractère Helvetica)
-    char_w = size * 0.55
-    max_chars = max(3, int((x_max - x) / char_w))
-    if len(texte) > max_chars:
-        texte = texte[:max_chars-1] + "…"
-    c.drawString(x, y, texte)
-
-
-def cartouche(c, pl_num, pl_total, titre, sous_titre, lot, echelle,
-              projet_nom, projet_ref, ville, date_str):
-    """
-    Cartouche droit — sobre, Tijan.
-    Bandeau vert haut (logo) + infos structurées dessous.
-    """
-    x = W - MR - CART_W
-    y = MB
-    cw = CART_W
-    ch = CART_H
-
-    # Fond blanc + bordure gris clair
-    c.setFillColor(BLANC)
-    c.setStrokeColor(GRIS_CLAIR)
-    c.setLineWidth(0.5)
-    c.rect(x, y, cw, ch, fill=1, stroke=1)
-
-    # Bandeau vert — logo Tijan
-    bh = 18*mm
-    c.setFillColor(TIJAN_VERT)
-    c.rect(x, y + ch - bh, cw, bh, fill=1, stroke=0)
-    c.setFillColor(BLANC)
-    c.setFont(FONT_TITRE, 11)
-    c.drawCentredString(x + cw/2, y + ch - bh/2 - 4, "TIJAN AI")
-    c.setFont(FONT_SOUS, 5.5)
-    c.drawCentredString(x + cw/2, y + ch - bh + 3.5*mm, "Bureau d'études automatisé")
-
-    # Numéro de planche — grand, sobre
-    c.setFillColor(TIJAN_VERT)
-    c.setFont(FONT_TITRE, 22)
-    c.drawCentredString(x + cw/2, y + ch - bh - 14*mm, f"{pl_num:02d}")
-    c.setFillColor(GRIS_MOY)
-    c.setFont(FONT_SOUS, 6)
-    c.drawCentredString(x + cw/2, y + ch - bh - 18*mm, f"/{pl_total}")
-
-    # Séparateur
-    c.setStrokeColor(GRIS_CLAIR); c.setLineWidth(0.4)
-    c.line(x + 4*mm, y + ch - bh - 20*mm, x + cw - 4*mm, y + ch - bh - 20*mm)
-
-    # Bloc infos projet
-    infos = [
-        ("PROJET",   projet_nom),
-        ("RÉF.",     projet_ref),
-        ("VILLE",    ville),
-        ("LOT",      lot),
-        ("TITRE",    titre),
-        ("ÉCHELLE",  echelle),
-        ("DATE",     date_str),
+def section_title(num, titre):
+    return [
+        Spacer(1, 4*mm),
+        HRFlowable(width=CW, thickness=2, color=VERT, spaceAfter=2),
+        Paragraph(f'{num}. {titre}', S['h1']),
     ]
 
-    yi = y + ch - bh - 22*mm
-    rh = 8.5*mm
-    for label, val in infos:
-        yi -= rh
-        # Label
-        c.setFillColor(GRIS_MOY)
-        c.setFont(FONT_SOUS, 4.5)
-        c.drawString(x + 3*mm, yi + rh*0.65, label)
-        # Valeur — tronquée si trop longue
-        c.setFillColor(NOIR)
-        c.setFont(FONT_TITRE, 5.5)
-        texte_clippe(c, str(val), x + 3*mm, yi + rh*0.2,
-                     x + cw - 3*mm, FONT_TITRE, 5.5, NOIR)
-        # Ligne séparatrice légère
-        c.setStrokeColor(GRIS_ALT); c.setLineWidth(0.3)
-        c.line(x + 3*mm, yi, x + cw - 3*mm, yi)
+def table_style(zebra=True, header_color=VERT):
+    cmds = [
+        ('BACKGROUND',    (0,0), (-1,0), header_color),
+        ('TEXTCOLOR',     (0,0), (-1,0), BLANC),
+        ('FONTNAME',      (0,0), (-1,0), 'Helvetica-Bold'),
+        ('FONTSIZE',      (0,0), (-1,-1), 7.5),
+        ('VALIGN',        (0,0), (-1,-1), 'MIDDLE'),
+        ('LEFTPADDING',   (0,0), (-1,-1), 4),
+        ('RIGHTPADDING',  (0,0), (-1,-1), 4),
+        ('TOPPADDING',    (0,0), (-1,-1), 3),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 3),
+        ('GRID',          (0,0), (-1,-1), 0.3, GRIS2),
+        ('LINEBELOW',     (0,0), (-1,0), 1.0, VERT),
+    ]
+    if zebra:
+        for i in range(1, 50, 2):
+            cmds.append(('ROWBACKGROUND', (0,i), (-1,i), GRIS1))
+    return TableStyle(cmds)
 
-    # Pied de cartouche — sous_titre
-    c.setFillColor(GRIS_FOND)
-    c.rect(x, y, cw, 8*mm, fill=1, stroke=0)
-    c.setFillColor(GRIS_FORT)
-    c.setFont(FONT_SOUS, 4.5)
-    # Découper sous_titre si trop long
-    max_c = int(cw / (4.5 * 0.55))
-    st = sous_titre[:max_c] if len(sous_titre) > max_c else sous_titre
-    c.drawCentredString(x + cw/2, y + 3*mm, st)
+def total_row_style(ts):
+    ts.add('BACKGROUND', (0,-1), (-1,-1), VERT_LIGHT)
+    ts.add('FONTNAME',   (0,-1), (-1,-1), 'Helvetica-Bold')
+    ts.add('LINEABOVE',  (0,-1), (-1,-1), 1.0, VERT)
+    return ts
 
-    # Bordure extérieure cartouche
-    c.setStrokeColor(GRIS_FORT); c.setLineWidth(0.8)
-    c.rect(x, y, cw, ch, fill=0, stroke=1)
+# ── Header/Footer ──────────────────────────────────────────────
+class HeaderFooter:
+    def __init__(self, nom_projet, type_doc, ref='', lang='fr'):
+        self.nom = nom_projet
+        self.type_doc = type_doc
+        self.ref = ref
+        self.logo = get_logo()
+        self.date = datetime.now().strftime('%d/%m/%Y')
+        if lang == 'en':
+            self.disclaimer = (
+                'Engineering assistance document — Beta version ±15%. '
+                'Must be verified by a licensed engineer. '
+                'Does not replace the legally required involvement of a certified engineering firm.'
+            )
+        else:
+            self.disclaimer = (
+                'Document d\'assistance à l\'ingénierie — Version bêta ±15%. '
+                'Doit être vérifié par un ingénieur habilité. '
+                'Ne remplace pas l\'intervention légalement obligatoire d\'un bureau d\'études.'
+            )
 
-
-def bandeau_titre(c, titre, sous_titre=""):
-    """Bandeau titre en haut de la zone dessin — sobre"""
-    c.setFillColor(NOIR)
-    c.rect(DX, DY + DH - TITRE_H, DW, TITRE_H, fill=1, stroke=0)
-    c.setFillColor(BLANC)
-    c.setFont(FONT_TITRE, 8)
-    # Tronquer si trop long
-    texte_clippe(c, titre, DX + 4*mm, DY + DH - TITRE_H/2 - 3,
-                 DX + DW*0.75, FONT_TITRE, 8, BLANC)
-    if sous_titre:
-        c.setFont(FONT_SOUS, 6)
-        texte_clippe(c, sous_titre,
-                     DX + DW*0.76, DY + DH - TITRE_H/2 - 2.5,
-                     DX + DW - 3*mm, FONT_SOUS, 6, GRIS_CLAIR)
-
-
-def bordure_page(c):
-    """Bordure fine de la page"""
-    c.setStrokeColor(GRIS_FORT)
-    c.setLineWidth(1.0)
-    c.rect(6*mm, 6*mm, W - 12*mm, H - 12*mm, fill=0, stroke=1)
-
-
-def tableau_donnees(c, x, y, w, h, titre, lignes, col_split=0.55):
-    """
-    Tableau de données sobre — 2 colonnes (label / valeur).
-    Clipping strict dans les limites x,y,w,h.
-    lignes : list of (label, valeur) ou ("---",) pour séparateur
-    """
-    # Fond
-    c.setFillColor(BLANC)
-    c.setStrokeColor(GRIS_CLAIR)
-    c.setLineWidth(0.4)
-    c.rect(x, y, w, h, fill=1, stroke=1)
-
-    # Titre bandeau
-    th = 7*mm
-    c.setFillColor(NOIR)
-    c.rect(x, y + h - th, w, th, fill=1, stroke=0)
-    c.setFillColor(BLANC)
-    c.setFont(FONT_TITRE, 6.5)
-    texte_clippe(c, titre, x + 3*mm, y + h - th/2 - 2.5,
-                 x + w - 3*mm, FONT_TITRE, 6.5, BLANC)
-
-    # Lignes
-    zone_h = h - th
-    n = max(len(lignes), 1)
-    rh = min(zone_h / n, 7*mm)
-
-    for i, ligne in enumerate(lignes):
-        yy = y + h - th - (i + 1) * rh
-        if yy < y:
-            break  # ne pas dépasser le bas
-
-        # Alternance fond
-        if i % 2 == 0:
-            c.setFillColor(GRIS_ALT)
-            c.rect(x, yy, w, rh, fill=1, stroke=0)
-
-        if len(ligne) == 1 and ligne[0] == "---":
-            # Séparateur
-            c.setStrokeColor(TIJAN_VERT); c.setLineWidth(0.5)
-            c.line(x + 2*mm, yy + rh/2, x + w - 2*mm, yy + rh/2)
-            c.setDash()
-            continue
-
-        label, val = ligne[0], ligne[1] if len(ligne) > 1 else ""
-        x_split = x + w * col_split
-
-        # Label
-        c.setFillColor(GRIS_FORT)
-        c.setFont(FONT_SOUS, 5.2)
-        texte_clippe(c, label, x + 2.5*mm, yy + rh*0.3,
-                     x_split - 1*mm, FONT_SOUS, 5.2, GRIS_FORT)
-
-        # Valeur
-        c.setFillColor(NOIR)
-        c.setFont(FONT_TITRE, 5.5)
-        texte_clippe(c, str(val), x_split + 1*mm, yy + rh*0.3,
-                     x + w - 2*mm, FONT_TITRE, 5.5, NOIR)
-
-    # Bordure finale
-    c.setStrokeColor(GRIS_CLAIR); c.setLineWidth(0.4)
-    c.rect(x, y, w, h, fill=0, stroke=1)
-
-
-def legende_item(c, x, y, color, lw, dash, label):
-    """Item de légende sobre — ligne + texte"""
-    set_trait(c, lw, color, dash)
-    c.line(x, y + 2.5*mm, x + 8*mm, y + 2.5*mm)
-    c.setDash()
-    c.setFillColor(NOIR)
-    c.setFont(FONT_SOUS, 5.5)
-    c.drawString(x + 10*mm, y + 1*mm, label)
-
-
-def bulle_axe(c, cx, cy, r, texte):
-    """Bulle d'axe minimaliste"""
-    c.setFillColor(BLANC)
-    c.setStrokeColor(GRIS_FORT)
-    c.setLineWidth(0.5)
-    c.circle(cx, cy, r, fill=1, stroke=1)
-    c.setFillColor(NOIR)
-    c.setFont(FONT_TITRE, 6)
-    c.drawCentredString(cx, cy - 2.2, texte[:2])
-
-
-def hachures(c, x, y, w, h, pas=3*mm, angle=45):
-    """Hachures béton clippées dans un rectangle"""
-    c.saveState()
-    p = c.beginPath()
-    p.rect(x, y, w, h)
-    c.clipPath(p, stroke=0, fill=0)
-    c.setStrokeColor(GRIS_CLAIR)
-    c.setLineWidth(LW_TRES_FIN)
-    diag = math.hypot(w, h) + pas
-    cx_h, cy_h = x + w/2, y + h/2
-    n = int(diag / pas) + 2
-    import math as _math
-    a = _math.radians(angle)
-    ca, sa = _math.cos(a), _math.sin(a)
-    for i in range(-n, n):
-        d = i * pas
-        ox, oy = d * _math.cos(a + _math.pi/2), d * _math.sin(a + _math.pi/2)
-        c.line(cx_h + ox - diag*ca, cy_h + oy - diag*sa,
-               cx_h + ox + diag*ca, cy_h + oy + diag*sa)
-    c.restoreState()
-
-
-import math
+    def __call__(self, canv, doc):
+        canv.saveState()
+        w, h = PAGE
+        # Bande verte header
+        canv.setFillColor(VERT)
+        canv.rect(0, h-14*mm, w, 14*mm, fill=1, stroke=0)
+        # Logo
+        if self.logo:
+            try:
+                canv.drawImage(self.logo, ML, h-12.5*mm, width=32*mm, height=9*mm,
+                               preserveAspectRatio=True, mask='auto')
+            except:
+                canv.setFont('Helvetica-Bold', 9)
+                canv.setFillColor(BLANC)
+                canv.drawString(ML, h-9*mm, 'TIJAN AI')
+        else:
+            canv.setFont('Helvetica-Bold', 9)
+            canv.setFillColor(BLANC)
+            canv.drawString(ML, h-9*mm, 'TIJAN AI')
+        # Tagline
+        canv.setFont('Helvetica', 7)
+        canv.setFillColor(BLANC)
+        canv.drawString(ML+34*mm, h-9*mm, 'Engineering Intelligence for Africa')
+        # Type document
+        canv.setFont('Helvetica-Bold', 9)
+        canv.drawRightString(w-MR, h-9*mm, self.type_doc.upper())
+        # Sous-header
+        canv.setFillColor(NOIR)
+        canv.setFont('Helvetica-Bold', 8)
+        canv.drawString(ML, h-18*mm, self.nom)
+        if self.ref:
+            canv.setFont('Helvetica', 7)
+            canv.setFillColor(GRIS3)
+            canv.drawString(ML+80*mm, h-18*mm, f'Réf. {self.ref}')
+        canv.setFont('Helvetica', 7)
+        canv.setFillColor(GRIS3)
+        canv.drawRightString(w-MR, h-18*mm, self.date)
+        # Ligne
+        canv.setStrokeColor(GRIS2)
+        canv.setLineWidth(0.5)
+        canv.line(ML, h-20*mm, w-MR, h-20*mm)
+        # Footer — 2 lignes séparées
+        canv.line(ML, 14*mm, w-MR, 14*mm)
+        canv.setFont('Helvetica-Oblique', 5.5)
+        canv.setFillColor(GRIS3)
+        # Ligne 1 — disclaimer (gauche)
+        disclaimer = getattr(self, 'disclaimer',
+            'Engineering assistance document — Beta ±15%. Must be verified by a licensed engineer.')
+        canv.drawString(ML, 9.5*mm, disclaimer)
+        # Ligne 2 — page number (droite, ligne séparée)
+        canv.setFont('Helvetica', 6.5)
+        canv.setFillColor(GRIS3)
+        canv.drawRightString(w-MR, 5*mm, f'Page {doc.page} | Tijan AI © {datetime.now().year}')
+        canv.restoreState()
