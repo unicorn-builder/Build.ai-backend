@@ -547,6 +547,29 @@ async def generate_planches(params: ParamsProjet):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+
+@app.post("/chat")
+async def chat_projet(request: Request):
+    """Chat LLM avec contexte projet — fine-tuning outputs."""
+    try:
+        from chat_engine import chat
+        body = await request.json()
+        message = body.get("message", "")
+        historique = body.get("historique", [])
+        params = body.get("params", {})
+        resultats_structure = body.get("resultats_structure", {})
+        resultats_mep = body.get("resultats_mep", None)
+        if not message:
+            raise HTTPException(status_code=400, detail="Message manquant")
+        reponse = chat(message, historique, params, resultats_structure, resultats_mep)
+        gc.collect()
+        return {"ok": True, "reponse": reponse}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"/chat error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 # ════════════════════════════════════════════════════════════
 # ENTRÉE
 # ════════════════════════════════════════════════════════════
