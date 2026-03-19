@@ -10,13 +10,28 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Table, Spacer, Page
 from tijan_theme import *
 
 
-def generer_boq_mep_detail(rm, params: dict) -> bytes:
+def generer_boq_mep_detail(rm, params: dict, lang: str = "fr") -> bytes:
+    from translate_pdf import translate as _tr
+    from reportlab.platypus import Paragraph as _OrigPara
+    if lang == 'en':
+        import reportlab.platypus as _rp
+        import tijan_theme as _th
+        class _P(_OrigPara):
+            def __init__(self, text, style, *args, **kw):
+                super().__init__(_tr(str(text), 'en'), style, *args, **kw)
+        _rp.Paragraph = _P
+        _th.Paragraph = _P
     buf = io.BytesIO()
     hf = HeaderFooter(rm.params.nom, 'BOQ MEP — Détaillé')
     doc = SimpleDocTemplate(buf, pagesize=A4,
         leftMargin=ML, rightMargin=MR, topMargin=26*mm, bottomMargin=18*mm)
     doc.build(_build(rm), onFirstPage=hf, onLaterPages=hf)
-    return buf.getvalue()
+    if lang == 'en':
+        import reportlab.platypus as _rp
+        _rp.Paragraph = _OrigPara
+        import tijan_theme as _th
+        _th.Paragraph = _OrigPara
+        return buf.getvalue()
 
 
 def _row(lot, desig, qte, unite, pu_b, pu_h, pu_l, note='', bold=False):

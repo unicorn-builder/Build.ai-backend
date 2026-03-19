@@ -11,13 +11,28 @@ from reportlab.platypus import (SimpleDocTemplate, Paragraph, Table,
 from tijan_theme import *
 
 
-def generer_boq_structure(rs, params: dict) -> bytes:
+def generer_boq_structure(rs, params: dict, lang: str = "fr") -> bytes:
+    from translate_pdf import translate as _tr
+    from reportlab.platypus import Paragraph as _OrigPara
+    if lang == 'en':
+        import reportlab.platypus as _rp
+        import tijan_theme as _th
+        class _P(_OrigPara):
+            def __init__(self, text, style, *args, **kw):
+                super().__init__(_tr(str(text), 'en'), style, *args, **kw)
+        _rp.Paragraph = _P
+        _th.Paragraph = _P
     buf = io.BytesIO()
     hf = HeaderFooter(rs.params.nom, 'BOQ Structure — Détaillé')
     doc = SimpleDocTemplate(buf, pagesize=A4,
         leftMargin=ML, rightMargin=MR, topMargin=26*mm, bottomMargin=18*mm)
     doc.build(_build(rs), onFirstPage=hf, onLaterPages=hf)
-    return buf.getvalue()
+    if lang == 'en':
+        import reportlab.platypus as _rp
+        _rp.Paragraph = _OrigPara
+        import tijan_theme as _th
+        _th.Paragraph = _OrigPara
+        return buf.getvalue()
 
 
 def _row(lot, desig, qte, unite, pu, montant, note='', bold=False):

@@ -14,13 +14,28 @@ from tijan_theme import *
 # NOTE DE CALCUL MEP
 # ══════════════════════════════════════════════════════════════
 
-def generer_note_mep(rm, params: dict) -> bytes:
+def generer_note_mep(rm, params: dict, lang: str = "fr") -> bytes:
+    from translate_pdf import translate as _tr
+    from reportlab.platypus import Paragraph as _OrigPara
+    if lang == 'en':
+        import reportlab.platypus as _rp
+        import tijan_theme as _th
+        class _P(_OrigPara):
+            def __init__(self, text, style, *args, **kw):
+                super().__init__(_tr(str(text), 'en'), style, *args, **kw)
+        _rp.Paragraph = _P
+        _th.Paragraph = _P
     buf = io.BytesIO()
     hf = HeaderFooter(rm.params.nom, 'Note de calcul MEP')
     doc = SimpleDocTemplate(buf, pagesize=A4,
         leftMargin=ML, rightMargin=MR, topMargin=26*mm, bottomMargin=18*mm)
     doc.build(_build_note_mep(rm), onFirstPage=hf, onLaterPages=hf)
-    return buf.getvalue()
+    if lang == 'en':
+        import reportlab.platypus as _rp
+        _rp.Paragraph = _OrigPara
+        import tijan_theme as _th
+        _th.Paragraph = _OrigPara
+        return buf.getvalue()
 
 
 def _build_note_mep(rm):
@@ -172,13 +187,28 @@ def _build_note_mep(rm):
 # BOQ MEP
 # ══════════════════════════════════════════════════════════════
 
-def generer_boq_mep(rm, params: dict) -> bytes:
+def generer_boq_mep(rm, params: dict, lang: str = "fr") -> bytes:
+    from translate_pdf import translate as _tr
+    from reportlab.platypus import Paragraph as _OrigPara
+    if lang == 'en':
+        import reportlab.platypus as _rp
+        import tijan_theme as _th
+        class _P(_OrigPara):
+            def __init__(self, text, style, *args, **kw):
+                super().__init__(_tr(str(text), 'en'), style, *args, **kw)
+        _rp.Paragraph = _P
+        _th.Paragraph = _P
     buf = io.BytesIO()
     hf = HeaderFooter(rm.params.nom, 'BOQ MEP')
     doc = SimpleDocTemplate(buf, pagesize=A4,
         leftMargin=ML, rightMargin=MR, topMargin=26*mm, bottomMargin=18*mm)
     doc.build(_build_boq_mep(rm), onFirstPage=hf, onLaterPages=hf)
-    return buf.getvalue()
+    if lang == 'en':
+        import reportlab.platypus as _rp
+        _rp.Paragraph = _OrigPara
+        import tijan_theme as _th
+        _th.Paragraph = _OrigPara
+        return buf.getvalue()
 
 
 def _build_boq_mep(rm):
@@ -242,13 +272,28 @@ def _build_boq_mep(rm):
 # RAPPORT EDGE
 # ══════════════════════════════════════════════════════════════
 
-def generer_edge(rm, params: dict) -> bytes:
+def generer_edge(rm, params: dict, lang: str = "fr") -> bytes:
+    from translate_pdf import translate as _tr
+    from reportlab.platypus import Paragraph as _OrigPara
+    if lang == 'en':
+        import reportlab.platypus as _rp
+        import tijan_theme as _th
+        class _P(_OrigPara):
+            def __init__(self, text, style, *args, **kw):
+                super().__init__(_tr(str(text), 'en'), style, *args, **kw)
+        _rp.Paragraph = _P
+        _th.Paragraph = _P
     buf = io.BytesIO()
     hf = HeaderFooter(rm.params.nom, 'Pré-évaluation EDGE')
     doc = SimpleDocTemplate(buf, pagesize=A4,
         leftMargin=ML, rightMargin=MR, topMargin=26*mm, bottomMargin=18*mm)
     doc.build(_build_edge(rm), onFirstPage=hf, onLaterPages=hf)
-    return buf.getvalue()
+    if lang == 'en':
+        import reportlab.platypus as _rp
+        _rp.Paragraph = _OrigPara
+        import tijan_theme as _th
+        _th.Paragraph = _OrigPara
+        return buf.getvalue()
 
 
 def _build_edge(rm):
@@ -363,17 +408,32 @@ def _build_edge(rm):
 # RAPPORT DE SYNTHÈSE EXÉCUTIF
 # ══════════════════════════════════════════════════════════════
 
-def generer_rapport_executif(rs, rm, params: dict) -> bytes:
+def generer_rapport_executif(rs, rm, params: dict, lang: str = "fr") -> bytes:
     """
     Rapport 1-2 pages destiné au maître d'ouvrage non-technique.
     Synthèse tous corps d'état — coût global — EDGE.
     """
+    from translate_pdf import translate as _tr
+    from reportlab.platypus import Paragraph as _OrigPara
+    if lang == 'en':
+        import reportlab.platypus as _rp
+        import tijan_theme as _th
+        class _P(_OrigPara):
+            def __init__(self, text, style, *args, **kw):
+                super().__init__(_tr(str(text), 'en'), style, *args, **kw)
+        _rp.Paragraph = _P
+        _th.Paragraph = _P
     buf = io.BytesIO()
     hf = HeaderFooter(rs.params.nom, 'Rapport de synthèse exécutif')
     doc = SimpleDocTemplate(buf, pagesize=A4,
         leftMargin=ML, rightMargin=MR, topMargin=26*mm, bottomMargin=18*mm)
     doc.build(_build_executif(rs, rm), onFirstPage=hf, onLaterPages=hf)
-    return buf.getvalue()
+    if lang == 'en':
+        import reportlab.platypus as _rp
+        _rp.Paragraph = _OrigPara
+        import tijan_theme as _th
+        _th.Paragraph = _OrigPara
+        return buf.getvalue()
 
 
 def _build_executif(rs, rm):

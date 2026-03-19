@@ -8,7 +8,7 @@ from reportlab.lib.units import mm
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Table, Spacer, PageBreak, KeepTogether
 from tijan_theme import *
 
-def generer(rs, params: dict) -> bytes:
+def generer(rs, params: dict, lang: str = "fr") -> bytes:
     """
     rs : ResultatsStructure (output de engine_structure_v2.calculer_structure)
     params : dict avec nom, ville, etc.
