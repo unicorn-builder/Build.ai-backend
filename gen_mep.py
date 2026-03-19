@@ -35,7 +35,7 @@ def generer_note_mep(rm, params: dict, lang: str = "fr") -> bytes:
     doc = SimpleDocTemplate(buf, pagesize=A4,
         leftMargin=ML, rightMargin=MR, topMargin=26*mm, bottomMargin=18*mm)
     doc.build(_build_executif(rs, rm), onFirstPage=hf, onLaterPages=hf)
-        return buf.getvalue()
+    return buf.getvalue()
 
 
 def _build_executif(rs, rm):

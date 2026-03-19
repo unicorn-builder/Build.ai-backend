@@ -12,13 +12,12 @@ from tijan_theme import *
 
 
 def generer_boq_structure(rs, params: dict, lang: str = "fr") -> bytes:
-        _th.Paragraph = _P
     buf = io.BytesIO()
     hf = HeaderFooter(rs.params.nom, 'BOQ Structure — Détaillé')
     doc = SimpleDocTemplate(buf, pagesize=A4,
         leftMargin=ML, rightMargin=MR, topMargin=26*mm, bottomMargin=18*mm)
     doc.build(_build(rs), onFirstPage=hf, onLaterPages=hf)
-        return buf.getvalue()
+    return buf.getvalue()
 
 
 def _row(lot, desig, qte, unite, pu, montant, note='', bold=False):

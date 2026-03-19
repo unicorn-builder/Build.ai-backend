@@ -11,13 +11,12 @@ from tijan_theme import *
 
 
 def generer_boq_mep_detail(rm, params: dict, lang: str = "fr") -> bytes:
-        _th.Paragraph = _P
     buf = io.BytesIO()
     hf = HeaderFooter(rm.params.nom, 'BOQ MEP — Détaillé')
     doc = SimpleDocTemplate(buf, pagesize=A4,
         leftMargin=ML, rightMargin=MR, topMargin=26*mm, bottomMargin=18*mm)
     doc.build(_build(rm), onFirstPage=hf, onLaterPages=hf)
-        return buf.getvalue()
+    return buf.getvalue()
 
 
 def _row(lot, desig, qte, unite, pu_b, pu_h, pu_l, note='', bold=False):
