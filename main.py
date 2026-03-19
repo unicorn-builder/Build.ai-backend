@@ -393,7 +393,7 @@ async def generate_note_structure(params: ParamsProjet):
         generer = get_gen_note_structure()
         donnees = params_to_donnees(params)
         rs = calculer_structure(donnees)
-        pdf_bytes = generer(rs, params.dict(), lang=params.lang)
+        pdf_bytes = generer(rs, params.dict())
         gc.collect()
         return pdf_response(pdf_bytes, fname(params, "note_structure"))
     except Exception as e:
@@ -409,7 +409,7 @@ async def generate_boq_structure(params: ParamsProjet):
         generer = get_gen_boq_structure()
         donnees = params_to_donnees(params)
         rs = calculer_structure(donnees)
-        pdf_bytes = generer(rs, params.dict(), lang=params.lang)
+        pdf_bytes = generer(rs, params.dict())
         gc.collect()
         return pdf_response(pdf_bytes, fname(params, "boq_structure"))
     except Exception as e:
@@ -427,7 +427,7 @@ async def generate_note_mep(params: ParamsProjet):
         donnees = params_to_donnees(params)
         rs = calculer_structure(donnees)
         rm = calculer_mep(donnees, rs)
-        pdf_bytes = generer(rm, params.dict(), lang=params.lang)
+        pdf_bytes = generer(rm, params.dict())
         gc.collect()
         return pdf_response(pdf_bytes, fname(params, "note_mep"))
     except Exception as e:
@@ -445,7 +445,7 @@ async def generate_boq_mep(params: ParamsProjet):
         donnees = params_to_donnees(params)
         rs = calculer_structure(donnees)
         rm = calculer_mep(donnees, rs)
-        pdf_bytes = generer(rm, params.dict(), lang=params.lang)
+        pdf_bytes = generer(rm, params.dict())
         gc.collect()
         return pdf_response(pdf_bytes, fname(params, "boq_mep"))
     except Exception as e:
@@ -463,7 +463,7 @@ async def generate_edge(params: ParamsProjet):
         donnees = params_to_donnees(params)
         rs = calculer_structure(donnees)
         rm = calculer_mep(donnees, rs)
-        pdf_bytes = generer(rm, params.dict(), lang=params.lang)
+        pdf_bytes = generer(rm, params.dict())
         gc.collect()
         return pdf_response(pdf_bytes, fname(params, "edge"))
     except Exception as e:
@@ -481,7 +481,7 @@ async def generate_rapport_executif(params: ParamsProjet):
         donnees = params_to_donnees(params)
         rs = calculer_structure(donnees)
         rm = calculer_mep(donnees, rs)
-        pdf_bytes = generer(rs, rm, params.dict(), lang=params.lang)
+        pdf_bytes = generer(rs, rm, params.dict())
         gc.collect()
         return pdf_response(pdf_bytes, fname(params, "rapport_executif"))
     except Exception as e:
