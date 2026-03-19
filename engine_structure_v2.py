@@ -976,7 +976,7 @@ def _analyser(d: DonneesProjet, poteaux: List[ResultatPoteau],
                poutre: ResultatPoutre, dalle: ResultatDalle,
                fondation: ResultatFondation, boq: BOQStructure,
                classe_beton: str, classe_acier: str,
-               lang: str = 'fr') -> AnalyseIngenieur:
+) -> AnalyseIngenieur:
 
     alertes = []
     points_forts = []
@@ -999,18 +999,18 @@ def _analyser(d: DonneesProjet, poteaux: List[ResultatPoteau],
     # Fondations
     if fondation.type == TypeFondation.PIEUX:
         if d.pression_sol_MPa <= 0.10:
-            alertes.append(f"Very compressible soil (qadm={d.pression_sol_MPa} MPa) — geotechnical study mandatory" if lang=='en' else f"Sol très compressible (qadm={d.pression_sol_MPa} MPa) — étude géotechnique obligatoire")
-        points_forts.append("Deep foundations suited to soil conditions" if lang=='en' else "Fondations profondes adaptées aux conditions de sol")
+            alertes.append(f"Sol très compressible (qadm={d.pression_sol_MPa} MPa) — étude géotechnique obligatoire")
+        points_forts.append("Fondations profondes adaptées aux conditions de sol")
 
     # Points forts
     if taux_max <= 2.0 and taux_min >= 0.5:
         points_forts.append("Taux d'armature dans la plage optimale EC2 sur tous les niveaux")
     if all(p.verif_ok for p in poteaux):
-        points_forts.append("All columns verified — structure compliant with EC2" if lang=='en' else "Tous les poteaux vérifiés — structure conforme EC2")
+        points_forts.append("Tous les poteaux vérifiés — structure conforme EC2")
 
     fck = _fck_from_classe(classe_beton)
     if fck >= 30:
-        points_forts.append(f"Concrete {classe_beton} suited to exposure and building height" if lang=='en' else f"Béton {classe_beton} adapté à l'exposition et à la hauteur du bâtiment")
+        points_forts.append(f"Béton {classe_beton} adapté à l'exposition et à la hauteur du bâtiment")
 
     # Recommandations
     if d.nb_niveaux >= 6 and fondation.type != TypeFondation.PIEUX:
@@ -1018,13 +1018,13 @@ def _analyser(d: DonneesProjet, poteaux: List[ResultatPoteau],
     if taux_max > 2.5:
         recommandations.append("Augmenter les sections de poteaux pour réduire le taux d'armature")
     if d.distance_mer_km < 5:
-        recommandations.append(f"Marine exposure ({d.distance_mer_km:.1f}km to sea) — cover ≥ 40mm mandatory" if lang=='en' else f"Exposition marine (distance mer {d.distance_mer_km:.1f}km) — enrobage ≥ 40mm impératif")
+        recommandations.append(f"Exposition marine (distance mer {d.distance_mer_km:.1f}km) — enrobage ≥ 40mm impératif")
 
-    recommandations.append("Detailed drawings to be produced by a licensed engineer before construction" if lang=='en' else "Faire établir les plans d'exécution par un BET agréé avant travaux")
-    recommandations.append("Plan on-site concrete tests (at least 3 specimens per pour)" if lang=='en' else "Prévoir essais béton sur site (au moins 3 éprouvettes par coulée)")
+    recommandations.append("Faire établir les plans d'exécution par un BET agréé avant travaux")
+    recommandations.append("Prévoir essais béton sur site (au moins 3 éprouvettes par coulée)")
 
     # Conformité
-    conf_ec2 = ("Compliant" if lang=='en' else "Conforme") if all(p.verif_ok for p in poteaux) else ("To verify" if lang=='en' else "À vérifier")
+    conf_ec2 = ("Conforme") if all(p.verif_ok for p in poteaux) else ("À vérifier")
     conf_ec8 = "Conforme DCL" if d.zone_sismique <= 2 else "Analyse complémentaire requise"
 
     # Note ingénieur
@@ -1138,7 +1138,7 @@ def calculer_structure(d: DonneesProjet) -> ResultatsStructure:
     shon_val  = _shon(d)
     sismique  = _calculer_sismique(d, zone, shon_val)
     boq       = _calculer_boq(d, poteaux, poutre_p, dalle, fondation, cloisons, prix_struct)
-    analyse   = _analyser(d, poteaux, poutre_p, dalle, fondation, boq, classe_beton, classe_acier, lang=d.lang)
+    analyse   = _analyser(d, poteaux, poutre_p, dalle, fondation, boq, classe_beton, classe_acier)
 
     return ResultatsStructure(
         params=d,
