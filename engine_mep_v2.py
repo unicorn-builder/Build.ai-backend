@@ -905,6 +905,8 @@ def _calculer_edge(d: DonneesProjet, surf_batie: float,
     })
     eco_energie += eco_vitrage
 
+    if edge_optimise:
+        eco_energie += 0.05 + 0.04  # CVC inverter + CESI solaire
     pct_energie = round(eco_energie * 100, 1)
     projet_energie = REF_ENERGIE_KWH_M2_AN * (1 - eco_energie)
 
@@ -1002,6 +1004,8 @@ def _calculer_edge(d: DonneesProjet, surf_batie: float,
     })
     eco_mat += eco_ggbs
 
+    if edge_optimise:
+        eco_mat += 0.04 + 0.03 + 0.08  # Acier recyclé + coffrage optimisé + GGBS
     pct_mat = round(eco_mat * 100, 1)
     ei_projet = REF_EI_KWH_M2 * (1 - eco_mat)
 
