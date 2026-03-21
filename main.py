@@ -645,7 +645,7 @@ import httpx
 PAYDUNYA_URL = "https://app.paydunya.com/sandbox-api/v1/checkout-invoice/create"
 PAYDUNYA_HEADERS = {
     "Content-Type": "application/json",
-    "PAYDUNYA-MASTER-KEY": "BQepwkZk-BQAT-Gn2L-Jaio-Chtp8s41cX3U",
+    "PAYDUNYA-MASTER-KEY": "BQepwkZk-8QAT-Gn2L-Jaio-Chtp8s41cX3U",
     "PAYDUNYA-PRIVATE-KEY": "test_private_Q6QXJ5DerwC3e0qWfrjjcFeQT8w",
     "PAYDUNYA-TOKEN": "jsWWcyFc9mTHQZJWnabw",
 }
