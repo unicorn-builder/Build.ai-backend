@@ -43,6 +43,7 @@ from typing import Optional
 from fastapi import Request, FastAPI, File, UploadFile, HTTPException, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
+from tijan_theme import set_pdf_lang
 from pydantic import BaseModel
 
 logging.basicConfig(level=logging.INFO)
