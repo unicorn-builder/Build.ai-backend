@@ -692,3 +692,43 @@ async def create_payment(request: Request):
         return {"ok": True, "url": data.get("response_text"), "token": data.get("token")}
     else:
         return {"ok": False, "error": data.get("response_text", "Erreur PayDunya")}
+
+
+# ── TRADUCTION VIA CLAUDE API ─────────────────────────────
+@app.post("/translate")
+async def translate_text(request: Request):
+    body = await request.json()
+    texts = body.get("texts", [])
+    target_lang = body.get("lang", "en")
+    
+    if not texts:
+        return {"ok": True, "translations": []}
+    
+    prompt = f"""Translate the following technical construction/engineering texts from French to English.
+Return ONLY a JSON array of translated strings, in the same order. No explanation, no markdown.
+Keep technical terms accurate (EC2, EC8, FCFA, kVA, m², m³, kW, etc.).
+Keep numbers and units unchanged.
+
+Texts to translate:
+{_json.dumps(texts, ensure_ascii=False)}"""
+
+    try:
+        import anthropic
+        client = anthropic.Anthropic()
+        message = client.messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=4000,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        response_text = message.content[0].text.strip()
+        # Parse JSON array
+        if response_text.startswith("["):
+            translations = _json.loads(response_text)
+        else:
+            # Try to extract JSON from response
+            start = response_text.find("[")
+            end = response_text.rfind("]") + 1
+            translations = _json.loads(response_text[start:end])
+        return {"ok": True, "translations": translations}
+    except Exception as e:
+        return {"ok": False, "error": str(e), "translations": texts}
