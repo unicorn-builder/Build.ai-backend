@@ -141,6 +141,7 @@ class ParamsProjet(BaseModel):
     # Optionnel
     sol_context:        Optional[str] = None
     avec_sous_sol:      bool  = False
+    lang:               str   = 'fr'  # 'fr' | 'en'
 
 
 # ════════════════════════════════════════════════════════════
