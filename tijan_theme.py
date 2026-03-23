@@ -107,6 +107,11 @@ def fmt_n(v, dec=0, unit=''):
     except: return '—'
 
 def section_title(num, titre):
+    if _current_lang == 'en':
+        try:
+            from pdf_translate import translate_pdf_text
+            titre = translate_pdf_text(titre)
+        except: pass
     return [
         Spacer(1, 4*mm),
         HRFlowable(width=CW, thickness=2, color=VERT, spaceAfter=2),
@@ -140,13 +145,20 @@ def total_row_style(ts):
 
 # ── Header/Footer ──────────────────────────────────────────────
 class HeaderFooter:
-    def __init__(self, nom_projet, type_doc, ref='', lang='fr'):
+    def __init__(self, nom_projet, type_doc, ref='', lang=None):
         self.nom = nom_projet
+        _lang = lang or _current_lang
+        if _lang == 'en':
+            try:
+                from pdf_translate import translate_pdf_text
+                type_doc = translate_pdf_text(type_doc)
+            except: pass
         self.type_doc = type_doc
         self.ref = ref
+        self.lang = _lang
         self.logo = get_logo()
         self.date = datetime.now().strftime('%d/%m/%Y')
-        if lang == 'en':
+        if _lang == 'en':
             self.disclaimer = (
                 'Engineering assistance document — Beta version ±15%. '
                 'Must be verified by a licensed engineer. '
@@ -192,7 +204,7 @@ class HeaderFooter:
         if self.ref:
             canv.setFont('Helvetica', 7)
             canv.setFillColor(GRIS3)
-            canv.drawString(ML+80*mm, h-18*mm, f'Réf. {self.ref}')
+            canv.drawString(ML+80*mm, h-18*mm, f'Ref. {self.ref}' if self.lang == 'en' else f'Réf. {self.ref}')
         canv.setFont('Helvetica', 7)
         canv.setFillColor(GRIS3)
         canv.drawRightString(w-MR, h-18*mm, self.date)
