@@ -55,7 +55,7 @@ def _build(rm):
     # ── SUMMARY TABLE ─────────────────────────────────────────
     story += section_title('2', 'SUMMARY BY LOT')
     cw_s = [CW*0.06, CW*0.28, CW*0.08, CW*0.08, CW*0.15, CW*0.15, CW*0.15]
-    sum_rows = [[p(h,'th') for h in ['Lot','Description','Qty','Unit',f"Basic ({current_devise.get('devise','FCFA') if current_devise and current_devise.get('devise')!='XOF' else 'FCFA'})",'High-End','Luxury']]]
+    sum_rows = [[p(h,'th') for h in ['Lot','Description','Qty','Unit',f"Basic ({devise_label()})",'High-End','Luxury']]]
     for lot in bmep.lots:
         designation_en = LOT_EN.get(lot.designation, lot.designation)
         sum_rows.append([

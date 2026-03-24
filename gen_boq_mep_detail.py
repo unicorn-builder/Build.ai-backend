@@ -84,7 +84,7 @@ def _build(rm):
 
     # Colonnes BOQ MEP
     CW_COLS = [CW*w for w in [0.05, 0.32, 0.06, 0.05, 0.12, 0.12, 0.12, 0.16]]
-    HEADERS = [p(h,'th') for h in ['Lot','Désignation','Qté','Unité',f"Basic ({current_devise.get('devise','FCFA') if current_devise and current_devise.get('devise')!='XOF' else 'FCFA'})",'High-End','Luxury','Marque / Réf.']]
+    HEADERS = [p(h,'th') for h in ['Lot','Désignation','Qté','Unité',f"Basic ({devise_label()})",'High-End','Luxury','Marque / Réf.']]
 
     def make_table(rows):
         t = Table([HEADERS] + rows, colWidths=CW_COLS, repeatRows=1)
@@ -506,8 +506,8 @@ def _build(rm):
     ])
     recap_rows.append([
         p('','td_b'), p(f'Coût MEP / m² bâti ({fmt_n(surf,0)} m²)','td_b'),
-        p(f'{ratio_b:,} {current_devise.get('devise','FCFA') if current_devise and current_devise.get('devise')!='XOF' else 'FCFA'}/m²'.replace(',', ' '),'td_r'),
-        p(f'{ratio_h:,} {current_devise.get('devise','FCFA') if current_devise and current_devise.get('devise')!='XOF' else 'FCFA'}/m²'.replace(',', ' '),'td_r'),
+        p(f'{ratio_b:,} {devise_label()}/m²'.replace(',', ' '),'td_r'),
+        p(f'{ratio_h:,} {devise_label()}/m²'.replace(',', ' '),'td_r'),
         p('—','td_r'), p('','td_b'),
     ])
 

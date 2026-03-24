@@ -38,7 +38,7 @@ def _build(rs):
     story.append(Spacer(1, 2*mm))
 
     cw_b = [CW*w for w in [0.05, 0.37, 0.09, 0.07, 0.13, 0.14, 0.15]]
-    boq_rows = [[p(h,'th') for h in ['Lot','Description','Qty','Unit',f"U.P. ({current_devise.get('devise','FCFA') if current_devise and current_devise.get('devise')!='XOF' else 'FCFA'})",'Low est.','High est.']]]
+    boq_rows = [[p(h,'th') for h in ['Lot','Description','Qty','Unit',f"U.P. ({devise_label()})",'Low est.','High est.']]]
 
     lots_data = [
         ('1', 'Earthworks — clearing + mechanical excavation',

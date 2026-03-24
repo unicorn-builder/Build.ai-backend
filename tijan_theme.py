@@ -19,6 +19,11 @@ _current_lang = 'fr'
 current_devise = None  # {'devise': 'NGN', 'symbole': '₦', 'taux_depuis_fcfa': 2.083333}
 def set_pdf_lang(lang): global _current_lang; _current_lang = lang
 def set_pdf_devise(devise_info): global current_devise; current_devise = devise_info
+
+def devise_label():
+    if current_devise and current_devise.get('devise') != 'XOF':
+        return current_devise.get('devise', 'FCFA')
+    return 'FCFA'
 from reportlab.platypus import Table, TableStyle, Paragraph, HRFlowable, Spacer
 
 # ── Couleurs ──────────────────────────────────────────────────
