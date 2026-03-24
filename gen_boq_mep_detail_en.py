@@ -9,6 +9,11 @@ from reportlab.lib.units import mm
 from reportlab.platypus import SimpleDocTemplate, Table, Spacer, PageBreak
 from tijan_theme import *
 
+def _devise_label():
+    if _current_devise and _current_devise.get('devise') != 'XOF':
+        return _current_devise.get('devise', 'FCFA')
+    return 'FCFA'
+
 LOT_EN = {
     "Électricité": "Electrical", "Electricité": "Electrical",
     "Plomberie": "Plumbing", "CVC / Climatisation": "HVAC", "CVC": "HVAC",
@@ -54,7 +59,7 @@ def _build(rm):
     # ── SUMMARY TABLE ─────────────────────────────────────────
     story += section_title('2', 'SUMMARY BY LOT')
     cw_s = [CW*0.06, CW*0.28, CW*0.08, CW*0.08, CW*0.15, CW*0.15, CW*0.15]
-    sum_rows = [[p(h,'th') for h in ['Lot','Description','Qty','Unit','Basic (FCFA)','High-End','Luxury']]]
+    sum_rows = [[p(h,'th') for h in ['Lot','Description','Qty','Unit',f'Basic ({_devise_label()})','High-End','Luxury']]]
     for lot in bmep.lots:
         designation_en = LOT_EN.get(lot.designation, lot.designation)
         sum_rows.append([

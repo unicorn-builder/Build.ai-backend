@@ -9,6 +9,11 @@ from reportlab.lib.units import mm
 from reportlab.platypus import SimpleDocTemplate, Table, Spacer, PageBreak
 from tijan_theme import *
 
+def _devise_label():
+    if _current_devise and _current_devise.get('devise') != 'XOF':
+        return _current_devise.get('devise', 'FCFA')
+    return 'FCFA'
+
 
 def generer_boq_structure(rs, params: dict) -> bytes:
     buf = io.BytesIO()
@@ -37,7 +42,7 @@ def _build(rs):
     story.append(Spacer(1, 2*mm))
 
     cw_b = [CW*w for w in [0.05, 0.37, 0.09, 0.07, 0.13, 0.14, 0.15]]
-    boq_rows = [[p(h,'th') for h in ['Lot','Description','Qty','Unit','U.P. (FCFA)','Low est.','High est.']]]
+    boq_rows = [[p(h,'th') for h in ['Lot','Description','Qty','Unit',f'U.P. ({_devise_label()})','Low est.','High est.']]]
 
     lots_data = [
         ('1', 'Earthworks — clearing + mechanical excavation',

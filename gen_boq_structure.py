@@ -10,6 +10,11 @@ from reportlab.platypus import (SimpleDocTemplate, Paragraph, Table,
                                   Spacer, PageBreak, KeepTogether)
 from tijan_theme import *
 
+def _devise_label():
+    if _current_devise and _current_devise.get('devise') != 'XOF':
+        return _current_devise.get('devise', 'FCFA')
+    return 'FCFA'
+
 
 def generer_boq_structure(rs, params: dict, lang: str = "fr") -> bytes:
     buf = io.BytesIO()
@@ -92,7 +97,7 @@ def _build(rs):
 
     # Colonnes BOQ
     CW_COLS = [CW*w for w in [0.05, 0.36, 0.07, 0.06, 0.12, 0.14, 0.20]]
-    HEADERS = [p(h,'th') for h in ['Lot','Désignation','Qté','Unité','P.U. (FCFA)','Montant (FCFA)','Observations']]
+    HEADERS = [p(h,'th') for h in ['Lot','Désignation','Qté','Unité',f'P.U. ({_devise_label()})',f'Montant ({_devise_label()})','Observations']]
 
     def make_table(rows):
         t = Table([HEADERS] + rows, colWidths=CW_COLS, repeatRows=1)

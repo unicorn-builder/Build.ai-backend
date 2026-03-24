@@ -9,6 +9,11 @@ from reportlab.lib.units import mm
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Table, Spacer, PageBreak
 from tijan_theme import *
 
+def _devise_label():
+    if _current_devise and _current_devise.get('devise') != 'XOF':
+        return _current_devise.get('devise', 'FCFA')
+    return 'FCFA'
+
 
 def generer_boq_mep_detail(rm, params: dict, lang: str = "fr") -> bytes:
     buf = io.BytesIO()
@@ -83,7 +88,7 @@ def _build(rm):
 
     # Colonnes BOQ MEP
     CW_COLS = [CW*w for w in [0.05, 0.32, 0.06, 0.05, 0.12, 0.12, 0.12, 0.16]]
-    HEADERS = [p(h,'th') for h in ['Lot','Désignation','Qté','Unité','Basic (FCFA)','High-End','Luxury','Marque / Réf.']]
+    HEADERS = [p(h,'th') for h in ['Lot','Désignation','Qté','Unité',f'Basic ({_devise_label()})','High-End','Luxury','Marque / Réf.']]
 
     def make_table(rows):
         t = Table([HEADERS] + rows, colWidths=CW_COLS, repeatRows=1)
@@ -505,8 +510,8 @@ def _build(rm):
     ])
     recap_rows.append([
         p('','td_b'), p(f'Coût MEP / m² bâti ({fmt_n(surf,0)} m²)','td_b'),
-        p(f'{ratio_b:,} FCFA/m²'.replace(',', ' '),'td_r'),
-        p(f'{ratio_h:,} FCFA/m²'.replace(',', ' '),'td_r'),
+        p(f'{ratio_b:,} {_devise_label()}/m²'.replace(',', ' '),'td_r'),
+        p(f'{ratio_h:,} {_devise_label()}/m²'.replace(',', ' '),'td_r'),
         p('—','td_r'), p('','td_b'),
     ])
 

@@ -98,7 +98,7 @@ def fmt_fcfa(v):
         if v == 0: return '—'
         if _current_devise and _current_devise.get('devise') != 'XOF':
             taux = _current_devise.get('taux_depuis_fcfa', 1.0)
-            sym = _current_devise.get('symbole', _current_devise.get('devise', 'FCFA'))
+            sym = _current_devise.get('devise', 'FCFA')  # Use ISO code for PDF (Helvetica has no ₦/₵)
             local = v * taux
             if local >= 1e9: return f'{local/1e9:.2f} B {sym}'
             if local >= 1e6: return f'{local/1e6:.1f} M {sym}'
