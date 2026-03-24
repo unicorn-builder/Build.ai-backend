@@ -243,6 +243,22 @@ def is_en(params: ParamsProjet) -> bool:
     """Check if English output is requested."""
     return getattr(params, 'lang', 'fr').lower().startswith('en')
 
+def get_devise_info(ville: str) -> dict:
+    """Get currency info for a city."""
+    try:
+        from prix_marche import get_prix, TAUX_CHANGE
+        p = get_prix(ville)
+        taux = TAUX_CHANGE.get(p.devise, 1.0)
+        return {
+            "devise": p.devise,
+            "symbole": {"XOF": "FCFA", "NGN": "₦", "MAD": "MAD", "GHS": "GH₵", "EUR": "€", "USD": "$"}.get(p.devise, p.devise),
+            "taux_vers_fcfa": taux,
+            "taux_depuis_fcfa": round(1.0 / taux, 6) if taux else 1.0,
+            "pays": p.pays,
+        }
+    except:
+        return {"devise": "XOF", "symbole": "FCFA", "taux_vers_fcfa": 1.0, "taux_depuis_fcfa": 1.0, "pays": "Senegal"}
+
 
 # ════════════════════════════════════════════════════════════
 # ENDPOINTS
@@ -346,6 +362,7 @@ async def calculate(params: ParamsProjet):
             "sismique": dataclasses.asdict(rs.sismique),
             "boq": dataclasses.asdict(rs.boq),
             "analyse": dataclasses.asdict(rs.analyse),
+            "devise_info": get_devise_info(params.ville),
         }
     except Exception as e:
         logger.error(f"/calculate error: {e}")
@@ -412,6 +429,7 @@ async def calculate_mep_endpoint(params: ParamsProjet):
                     for l in rm.boq.lots
                 ],
             },
+            "devise_info": get_devise_info(params.ville),
         }
     except Exception as e:
         logger.error(f"/calculate-mep error: {e}")
