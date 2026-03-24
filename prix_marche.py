@@ -748,6 +748,7 @@ PAYS = {
     "rabat":       CASABLANCA,  # Rabat ≈ Casablanca + 5%
     "maroc":       CASABLANCA,
     "lagos":       LAGOS,
+    "abuja":       LAGOS,
     "nigeria":     LAGOS,
     "accra":       ACCRA,
     "ghana":       ACCRA,
