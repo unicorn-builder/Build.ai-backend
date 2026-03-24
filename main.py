@@ -43,7 +43,7 @@ from typing import Optional
 from fastapi import Request, FastAPI, File, UploadFile, HTTPException, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
-from tijan_theme import set_pdf_lang
+from tijan_theme import set_pdf_lang, set_pdf_devise
 from pydantic import BaseModel
 
 logging.basicConfig(level=logging.INFO)
@@ -448,6 +448,7 @@ async def generate_note_structure(params: ParamsProjet):
         donnees = params_to_donnees(params)
         rs = calculer_structure(donnees)
         set_pdf_lang(getattr(params, 'lang', 'fr'))
+        set_pdf_devise(get_devise_info(params.ville))
 
         if is_en(params):
             generer = get_gen_note_structure_en()
@@ -470,6 +471,7 @@ async def generate_boq_structure(params: ParamsProjet):
         donnees = params_to_donnees(params)
         rs = calculer_structure(donnees)
         set_pdf_lang(getattr(params, 'lang', 'fr'))
+        set_pdf_devise(get_devise_info(params.ville))
 
         if is_en(params):
             generer = get_gen_boq_structure_en()
@@ -494,6 +496,7 @@ async def generate_note_mep(params: ParamsProjet):
         rs = calculer_structure(donnees)
         rm = calculer_mep(donnees, rs)
         set_pdf_lang(getattr(params, 'lang', 'fr'))
+        set_pdf_devise(get_devise_info(params.ville))
 
         if is_en(params):
             generer = get_gen_note_mep_en()
@@ -518,6 +521,7 @@ async def generate_boq_mep(params: ParamsProjet):
         rs = calculer_structure(donnees)
         rm = calculer_mep(donnees, rs)
         set_pdf_lang(getattr(params, 'lang', 'fr'))
+        set_pdf_devise(get_devise_info(params.ville))
 
         if is_en(params):
             generer = get_gen_boq_mep_en()
@@ -542,6 +546,7 @@ async def generate_edge(params: ParamsProjet):
         rs = calculer_structure(donnees)
         rm = calculer_mep(donnees, rs)
         set_pdf_lang(getattr(params, 'lang', 'fr'))
+        set_pdf_devise(get_devise_info(params.ville))
 
         if is_en(params):
             generer = get_gen_edge_en()
@@ -566,6 +571,7 @@ async def generate_rapport_executif(params: ParamsProjet):
         rs = calculer_structure(donnees)
         rm = calculer_mep(donnees, rs)
         set_pdf_lang(getattr(params, 'lang', 'fr'))
+        set_pdf_devise(get_devise_info(params.ville))
 
         if is_en(params):
             generer = get_gen_executif_en()
