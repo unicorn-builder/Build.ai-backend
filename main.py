@@ -738,6 +738,78 @@ if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
 
 
+
+
+# ── ENGINEER REVIEW ───────────────────────────────────────
+@app.post("/request-review")
+async def request_review(request: Request):
+    """Request an engineer review for a project."""
+    body = await request.json()
+    project_id = body.get("project_id")
+    user_id = body.get("user_id")
+    scope = body.get("scope", "structure")
+    prix = 500000
+
+    if not project_id or not user_id:
+        raise HTTPException(status_code=400, detail="project_id and user_id required")
+
+    # Create review record
+    from datetime import datetime
+    review_id = f"rev_{int(datetime.utcnow().timestamp())}"
+
+    # Create PayDunya payment for review
+    payload = {
+        "invoice": {
+            "total_amount": prix,
+            "description": f"Tijan AI — Engineer Review ({scope})",
+        },
+        "store": {
+            "name": "Tijan AI",
+            "tagline": "Engineering Intelligence for Africa",
+            "website_url": "https://tijan-frontend.vercel.app",
+        },
+        "custom_data": {
+            "user_id": user_id,
+            "project_id": project_id,
+            "review_scope": scope,
+            "type": "engineer_review",
+        },
+        "actions": {
+            "return_url": f"https://tijan-frontend.vercel.app/projects/{project_id}/review/success",
+            "cancel_url": f"https://tijan-frontend.vercel.app/projects/{project_id}/results",
+        },
+    }
+
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(PAYDUNYA_URL, json=payload, headers=PAYDUNYA_HEADERS)
+        data = resp.json()
+
+    if data.get("response_code") == "00":
+        return {
+            "ok": True,
+            "payment_url": data.get("response_text"),
+            "token": data.get("token"),
+            "prix_fcfa": prix,
+            "scope": scope,
+        }
+    else:
+        return {"ok": False, "error": data.get("response_text", "Payment error")}
+
+
+@app.get("/review/{project_id}")
+async def get_review_status(project_id: str):
+    """Get review status for a project (called by frontend)."""
+    # For now return a simple status — will be enhanced with Supabase queries
+    return {
+        "ok": True,
+        "project_id": project_id,
+        "status": "available",
+        "prix_fcfa": 500000,
+        "turnaround": "48-72 hours",
+        "scope_options": ["structure", "structure_mep", "full"],
+    }
+
+
 # ── PAYDUNYA ──────────────────────────────────────────────
 import httpx
 
