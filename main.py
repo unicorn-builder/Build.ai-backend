@@ -242,6 +242,9 @@ async def save_upload(file: UploadFile) -> str:
     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
         content = await file.read()
         tmp.write(content)
+        tmp.flush()
+        os.fsync(tmp.fileno())
+        logger.info(f"Saved upload: {tmp.name} ({len(content)} bytes)")
         return tmp.name
 
 def fname(params: ParamsProjet, prefix: str) -> str:
