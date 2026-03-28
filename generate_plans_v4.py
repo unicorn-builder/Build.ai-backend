@@ -338,16 +338,20 @@ def planche_coffrage(c, r, p):
     c.setFillColor(GRIS_FONCE)
     c.drawString(15 * mm, h - 24 * mm, "Poteaux, poutres, dalles — Dimensions en mm")
 
-    # Paramètres grille
-    nx = p.get("nb_travees_x", 4)
-    ny = p.get("nb_travees_y", 3)
+    # Paramètres grille — limiter pour lisibilité
+    nx_real = p.get("nb_travees_x", 4)
+    ny_real = p.get("nb_travees_y", 3)
+    nx = min(nx_real, 8)  # max 8 travées affichées en X
+    ny = max(min(ny_real, 6), 2)  # min 2, max 6 en Y
     portee_x = r.poutre_principale.portee_m if hasattr(r, "poutre_principale") else p.get("portee_max_m", 5.0)
     portee_y = r.poutre_secondaire.portee_m if hasattr(r, "poutre_secondaire") and r.poutre_secondaire else p.get("portee_min_m", 4.0)
+    if portee_y < 2.5:
+        portee_y = portee_x * 0.7  # fallback ratio
 
     # Zone de dessin
     margin_l = 45 * mm
     margin_b = 55 * mm
-    draw_w = w - margin_l - 60 * mm
+    draw_w = w - margin_l - 70 * mm
     draw_h = h - margin_b - 35 * mm
 
     # Échelle
@@ -355,8 +359,11 @@ def planche_coffrage(c, r, p):
     total_y = portee_y * ny
     scale = min(draw_w / (total_x * 1000), draw_h / (total_y * 1000))
 
-    ox = margin_l  # origine X
-    oy = margin_b  # origine Y
+    # Centrer la grille
+    grid_w = total_x * 1000 * scale
+    grid_h = total_y * 1000 * scale
+    ox = margin_l + (draw_w - grid_w) / 2
+    oy = margin_b + (draw_h - grid_h) / 2
 
     # Axes X labels (A, B, C, D...)
     x_labels = [chr(65 + i) for i in range(ny + 1)]  # A, B, C...
@@ -452,8 +459,15 @@ def planche_coffrage(c, r, p):
                 ly2 = y1 + min(k, y2 - y1)
                 c.line(lx1, ly1, lx2, ly2)
 
+    # Note si grille tronquée
+    if nx_real > nx or ny_real > ny:
+        c.setFont("Helvetica-Oblique", 6)
+        c.setFillColor(GRIS)
+        c.drawString(15 * mm, h - 30 * mm,
+                     f"Note : grille affichée {nx}×{ny} travées (projet réel : {nx_real}×{ny_real})")
+
     # Légende
-    lx = w - 55 * mm
+    lx = w - 65 * mm
     ly = h - 35 * mm
     c.setFont("Helvetica-Bold", 8)
     c.setFillColor(NOIR)
@@ -632,9 +646,13 @@ def planche_ferraillage_poutre(c, r, p, poutre_type="principale", page_num=3):
     c.setFont("Helvetica-Bold", 8)
     c.drawString(15 * mm, h - 36 * mm, "ÉLÉVATION — COUPE LONGITUDINALE")
 
-    elev_x = 20 * mm
-    elev_y = h - 100 * mm
-    scale_e = min((w - 40 * mm) / portee_mm, 0.03)
+    elev_x = 25 * mm
+    elev_y = h - 85 * mm
+    avail_w = w - 50 * mm
+    scale_e = min(avail_w / portee_mm, 0.035)
+    # Ensure beam height is visible (at least 15mm on page)
+    if h_mm * scale_e < 15:
+        scale_e = 15 / h_mm
     armatures_info = {
         "nb_cadres": int(portee_mm / etr_esp),
         "esp_cadres_mm": etr_esp,
@@ -653,23 +671,26 @@ def planche_ferraillage_poutre(c, r, p, poutre_type="principale", page_num=3):
     # Coupe A-A
     c.setFillColor(VERT)
     c.setFont("Helvetica-Bold", 8)
-    c.drawString(15 * mm, h - 115 * mm, "COUPE A-A")
+    c.drawString(15 * mm, h - 105 * mm, "COUPE A-A")
 
     sec_cx = 50 * mm
-    sec_cy = h - 155 * mm
+    sec_cy = h - 140 * mm
     nb_barres_inf = max(int(as_inf / (math.pi * (12 / 10) ** 2 / 4)), 2)
     nb_barres_sup = max(int(as_sup / (math.pi * (12 / 10) ** 2 / 4)), 2)
     nb_total = nb_barres_inf + nb_barres_sup
+    # Scale section to ~25mm max dimension on page
+    max_dim = max(b_mm, h_mm)
+    sec_scale = min(25 * mm / max_dim, 0.25 * mm)
     draw_rebar_section(c, sec_cx, sec_cy, b_mm, h_mm, nb_total, 12,
-                       etr_diam, etr_esp, scale=0.35 * mm)
+                       etr_diam, etr_esp, scale=sec_scale)
 
-    # Tableau caractéristiques
+    # Tableau caractéristiques — à droite de la coupe A-A
     c.setFillColor(VERT)
     c.setFont("Helvetica-Bold", 8)
-    c.drawString(15 * mm, h - 190 * mm, "CARACTÉRISTIQUES POUTRE TYPE")
+    c.drawString(100 * mm, h - 105 * mm, "CARACTÉRISTIQUES POUTRE TYPE")
 
-    tab_x = 15 * mm
-    tab_y = h - 200 * mm
+    tab_x = 100 * mm
+    tab_y = h - 115 * mm
     beton_class = p.get("classe_beton", "C30/37")
 
     specs = [
@@ -713,20 +734,24 @@ def planche_fondations(c, r, p):
     c.drawString(15 * mm, h - 24 * mm, "Implantation des pieux et longrines de liaison")
 
     fd = r.fondation if hasattr(r, "fondation") else None
-    nx = p.get("nb_travees_x", 4)
-    ny = p.get("nb_travees_y", 3)
+    nx = min(p.get("nb_travees_x", 4), 8)
+    ny = max(min(p.get("nb_travees_y", 3), 6), 2)
     portee_x = p.get("portee_max_m", 5.0)
     portee_y = p.get("portee_min_m", 4.0)
+    if portee_y < 2.5:
+        portee_y = portee_x * 0.7
 
     margin_l = 45 * mm
     margin_b = 55 * mm
-    draw_w = w - margin_l - 60 * mm
+    draw_w = w - margin_l - 70 * mm
     draw_h = h - margin_b - 35 * mm
     total_x = portee_x * nx
     total_y = portee_y * ny
     scale = min(draw_w / (total_x * 1000), draw_h / (total_y * 1000))
-    ox = margin_l
-    oy = margin_b
+    grid_w = total_x * 1000 * scale
+    grid_h = total_y * 1000 * scale
+    ox = margin_l + (draw_w - grid_w) / 2
+    oy = margin_b + (draw_h - grid_h) / 2
 
     # Axes
     c.setStrokeColor(GRIS_CLAIR)
