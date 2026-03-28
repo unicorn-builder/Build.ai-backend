@@ -974,9 +974,15 @@ def generer_dossier_ba(output_path: str, resultats=None, params: dict = None):
 
     # ── Adapter moteur v2 → format attendu par les planches ──
     if not hasattr(resultats, 'poteaux_par_niveau') and hasattr(resultats, 'poteaux'):
+        # Add missing 'label' attr if poteaux use 'niveau' instead
+        for p in resultats.poteaux:
+            if not hasattr(p, 'label') and hasattr(p, 'niveau'):
+                p.label = p.niveau
         resultats.poteaux_par_niveau = resultats.poteaux
     if not hasattr(resultats, 'poutre_type') and hasattr(resultats, 'poutre_principale'):
         resultats.poutre_type = resultats.poutre_principale
+    if not hasattr(resultats, 'poutre_secondaire_type') and hasattr(resultats, 'poutre_secondaire'):
+        resultats.poutre_secondaire_type = resultats.poutre_secondaire
     if not hasattr(resultats, 'fondation') and hasattr(resultats, 'fondation'):
         pass  # already exists
 
