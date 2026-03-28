@@ -132,11 +132,16 @@ def draw_axis_label(c, x, y, label, vertical=False):
 
 
 def draw_rebar_section(c, cx, cy, w_mm, h_mm, nb_barres, diam_mm, cadre_diam,
-                       esp_cadres, scale=1.0):
-    """Dessine une coupe transversale de section BA avec armatures."""
+                       esp_cadres, scale=None, target_h=40*mm):
+    """Dessine une coupe transversale de section BA avec armatures.
+    target_h: hauteur cible sur la page (défaut 40mm).
+    Scale is auto-calculated from target_h if not provided.
+    """
+    if scale is None:
+        scale = target_h / max(h_mm, w_mm)
     w = w_mm * scale
     h = h_mm * scale
-    enr = 3 * scale  # enrobage 30mm à l'échelle
+    enr = max(30 * scale, 2)  # enrobage 30mm à l'échelle, min 2pt
 
     # Section béton
     c.setFillColor(BLEU_BETON)
@@ -531,21 +536,20 @@ def planche_ferraillage_poteaux(c, r, p):
     c.setFont("Helvetica-Bold", 8)
     c.drawString(15 * mm, h - 38 * mm, "COUPES TRANSVERSALES")
 
-    # Dessin section
-    scale_s = 0.45 * mm
+    # Dessin section — centered in upper area
     sec_cx = 55 * mm
-    sec_cy = h - 75 * mm
+    sec_cy = h - 70 * mm
     draw_rebar_section(c, sec_cx, sec_cy, section, section, nb_b, diam,
-                       cadre, esp, scale=scale_s)
+                       cadre, esp, target_h=35 * mm)
 
     # Annotations section
     c.setFillColor(NOIR)
     c.setFont("Helvetica", 6.5)
-    c.drawCentredString(sec_cx, sec_cy - section * scale_s / 2 - 16,
+    c.drawCentredString(sec_cx, sec_cy - 25 * mm,
                         f"{section}x{section}")
-    c.drawCentredString(sec_cx, sec_cy - section * scale_s / 2 - 24,
+    c.drawCentredString(sec_cx, sec_cy - 29 * mm,
                         f"{nb_b}HA{diam}")
-    c.drawCentredString(sec_cx, sec_cy - section * scale_s / 2 - 32,
+    c.drawCentredString(sec_cx, sec_cy - 33 * mm,
                         f"Cadres HA{cadre}/{esp}")
 
     # Tableau des sections par niveau
@@ -647,12 +651,15 @@ def planche_ferraillage_poutre(c, r, p, poutre_type="principale", page_num=3):
     c.drawString(15 * mm, h - 36 * mm, "ÉLÉVATION — COUPE LONGITUDINALE")
 
     elev_x = 25 * mm
-    elev_y = h - 85 * mm
+    elev_y = h - 80 * mm
     avail_w = w - 50 * mm
-    scale_e = min(avail_w / portee_mm, 0.035)
-    # Ensure beam height is visible (at least 15mm on page)
-    if h_mm * scale_e < 15:
-        scale_e = 15 / h_mm
+    # Scale to fit width, with beam height at least 12mm on page
+    scale_e = avail_w / portee_mm
+    beam_h_page = h_mm * scale_e
+    if beam_h_page < 12:
+        scale_e = 12 / h_mm
+    if beam_h_page > 30:
+        scale_e = 30 / h_mm
     armatures_info = {
         "nb_cadres": int(portee_mm / etr_esp),
         "esp_cadres_mm": etr_esp,
@@ -682,7 +689,7 @@ def planche_ferraillage_poutre(c, r, p, poutre_type="principale", page_num=3):
     max_dim = max(b_mm, h_mm)
     sec_scale = min(25 * mm / max_dim, 0.25 * mm)
     draw_rebar_section(c, sec_cx, sec_cy, b_mm, h_mm, nb_total, 12,
-                       etr_diam, etr_esp, scale=sec_scale)
+                       etr_diam, etr_esp, target_h=35 * mm)
 
     # Tableau caractéristiques — à droite de la coupe A-A
     c.setFillColor(VERT)
@@ -897,7 +904,7 @@ def planche_ferraillage_longrine(c, r, p):
     sec_cx = 45 * mm
     sec_cy = h - 150 * mm
     draw_rebar_section(c, sec_cx, sec_cy, long_b, long_h, nb_barres, diam,
-                       cadre_diam, esp_cadres, scale=0.35 * mm)
+                       cadre_diam, esp_cadres, target_h=35 * mm)
 
     # Tableau armatures
     c.setFillColor(VERT)
