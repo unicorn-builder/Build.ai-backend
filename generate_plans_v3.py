@@ -979,6 +979,13 @@ def generer_dossier_ba(output_path: str, resultats=None, params: dict = None):
             if not hasattr(p, 'label') and hasattr(p, 'niveau'):
                 p.label = p.niveau
         resultats.poteaux_par_niveau = resultats.poteaux
+    # Adapt fondation attrs
+    if hasattr(resultats, 'fondation'):
+        fd = resultats.fondation
+        if not hasattr(fd, 'type_fond') and hasattr(fd, 'type'):
+            fd.type_fond = str(fd.type.value) if hasattr(fd.type, 'value') else str(fd.type)
+        if not hasattr(fd, 'section_semelle_m') and hasattr(fd, 'largeur_semelle_m'):
+            fd.section_semelle_m = fd.largeur_semelle_m
     if not hasattr(resultats, 'poutre_type') and hasattr(resultats, 'poutre_principale'):
         resultats.poutre_type = resultats.poutre_principale
     if not hasattr(resultats, 'poutre_secondaire_type') and hasattr(resultats, 'poutre_secondaire'):
