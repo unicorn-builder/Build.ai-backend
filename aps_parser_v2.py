@@ -221,6 +221,19 @@ def extract_geometry(properties: List[Dict]) -> Dict[str, Any]:
     """
     Extract structural geometry from APS properties.
     Returns axes, dimensions, layers, emprise for the Eurocodes engine.
+
+    Logic for axes:
+    - Axes in DWG are lines on the "axes" layer, all drawn at same angle (e.g. 180°).
+    - Axes in one direction (X) have one length, axes in the other (Y) have a different length.
+    - The longer group = axes spanning the longer dimension of the building.
+    - Count per group = number of axes in that direction.
+    - Axes are duplicated per floor level, so we divide by estimated nb_niveaux_in_dwg.
+
+    Logic for dimensions:
+    - Measurement field in Text properties = dimension value in display units.
+    - Dim scale linear tells us the conversion (0.1 = drawing in mm, display in cm).
+    - Portées = dimensions between 200-1000 cm (structural spans).
+    - Mur épaisseurs = dimensions 10-50 cm.
     """
     layers = Counter()
     axes_lines = []
@@ -249,7 +262,7 @@ def extract_geometry(properties: List[Dict]) -> Dict[str, Any]:
                 angle = float(angle_str.replace(" deg", "").replace(",", "."))
             except (ValueError, AttributeError):
                 length, angle = 0, 0
-            if length > 0:
+            if length > 100:  # ignore tiny lines
                 axes_lines.append({"length_mm": length, "angle_deg": angle})
 
         # Dimensions (cotations)
@@ -278,67 +291,132 @@ def extract_geometry(properties: List[Dict]) -> Dict[str, Any]:
             if name:
                 texts.append(name)
 
-    # ── Analyze axes to find grid ──
-    axes_x = []  # horizontal (angle ~0 or ~180)
-    axes_y = []  # vertical (angle ~90 or ~270)
+    # ── Analyze axes: group by length to find X vs Y directions ──
+    # In a typical DWG, axes in X-direction all have the same length (spanning Y),
+    # and axes in Y-direction all have the same length (spanning X).
+    length_counts = Counter()
     for ax in axes_lines:
-        a = ax["angle_deg"] % 360
-        if a < 10 or a > 350 or (170 < a < 190):
-            axes_x.append(ax["length_mm"])
-        elif (80 < a < 100) or (260 < a < 280):
-            axes_y.append(ax["length_mm"])
+        # Round to nearest 100mm to group similar lengths
+        rounded = round(ax["length_mm"] / 100) * 100
+        length_counts[rounded] += 1
+
+    # Sort by count descending — the two most common lengths are our axis groups
+    top_lengths = length_counts.most_common()
+    logger.info("Axis length groups: %s", top_lengths[:5])
+
+    if len(top_lengths) >= 2:
+        # Two groups: longer length = emprise in that direction
+        len_a, count_a = top_lengths[0]
+        len_b, count_b = top_lengths[1]
+        # The longer lines span the longer dimension
+        if len_a >= len_b:
+            emprise_long_mm = len_a
+            emprise_short_mm = len_b
+            axes_along_long = count_a  # axes parallel to long side
+            axes_along_short = count_b  # axes parallel to short side
+        else:
+            emprise_long_mm = len_b
+            emprise_short_mm = len_a
+            axes_along_long = count_b
+            axes_along_short = count_a
+
+        # Axes are duplicated per floor in the DWG.
+        # Estimate floors from the repetition pattern.
+        # If we have N total axes and they repeat for each floor,
+        # the true count per direction = total / nb_floors_in_dwg.
+        # For Sakho: 9 levels in DWG, axes repeated per layout.
+        # Heuristic: if count > 20, likely duplicated across floors.
+        # Use GCD or simple division to find the base count.
+        def deduplicate_axes(count, length_mm):
+            """Estimate real axis count by finding likely duplication factor."""
+            if count <= 15:
+                return count
+            # Try common floor counts (2-12)
+            for floors in range(12, 1, -1):
+                if count % floors == 0:
+                    base = count // floors
+                    if 3 <= base <= 15:  # reasonable axis count
+                        return base
+            # Fallback: assume axes repeated for ~8 floors
+            base = round(count / 8)
+            return max(base, 3)
+
+        nb_axes_x = deduplicate_axes(axes_along_short, emprise_short_mm)
+        nb_axes_y = deduplicate_axes(axes_along_long, emprise_long_mm)
+
+        # Emprise: axes spanning X = emprise_x, axes spanning Y = emprise_y
+        # Axes along short side span the long dimension
+        emprise_x_mm = emprise_long_mm
+        emprise_y_mm = emprise_short_mm
+
+    elif len(top_lengths) == 1:
+        # All axes same length — square building or single direction
+        length, count = top_lengths[0]
+        emprise_x_mm = length
+        emprise_y_mm = length * 0.7  # estimate
+        nb_axes_x = min(count, 8)
+        nb_axes_y = max(int(nb_axes_x * 0.7), 3)
+
+    else:
+        # No axes found
+        emprise_x_mm = 0
+        emprise_y_mm = 0
+        nb_axes_x = 0
+        nb_axes_y = 0
 
     # ── Analyze dimensions to find portées ──
     dim_values = sorted(set(d["value"] for d in dimensions))
-    # Filter structural portées (typically 300-800 cm)
-    portees = [v for v in dim_values if 200 <= v <= 1200]
-    # Filter wall thicknesses (typically 15-30 cm)
+    # Portées structurelles = entre-axes typiques (300-1000 cm)
+    portees = [v for v in dim_values if 250 <= v <= 1000]
+    # Épaisseurs murs (15-30 cm)
     mur_eps = [v for v in dim_values if 10 <= v <= 50]
-    # Filter room dimensions (typically 200-600 cm)
-    room_dims = [v for v in dim_values if 100 <= v <= 800]
 
-    # ── Emprise from axes ──
-    emprise_x = max(axes_x) if axes_x else 0  # in mm
-    emprise_y = max(axes_y) if axes_y else 0  # in mm
-    if emprise_x == 0 and emprise_y == 0:
-        # Fallback: use longest axes regardless of direction
-        all_lengths = [ax["length_mm"] for ax in axes_lines]
-        if len(all_lengths) >= 2:
-            all_lengths_sorted = sorted(set(all_lengths), reverse=True)
-            emprise_x = all_lengths_sorted[0]
-            emprise_y = all_lengths_sorted[1] if len(all_lengths_sorted) > 1 else all_lengths_sorted[0]
+    # ── Calculate portées from axes if dimensions don't give clear spans ──
+    nb_travees_x = max(nb_axes_x - 1, 1)
+    nb_travees_y = max(nb_axes_y - 1, 1)
 
-    # ── Estimate grid from axis count ──
-    nb_axes_x = len(axes_x) if axes_x else 0
-    nb_axes_y = len(axes_y) if axes_y else 0
+    if portees:
+        portee_max = max(portees) / 100  # cm → m
+        portee_min = min(portees) / 100
+    elif nb_travees_x > 0 and emprise_x_mm > 0:
+        # Estimate portée from emprise / nb_travées
+        portee_x = (emprise_x_mm / nb_travees_x) / 1000  # mm → m
+        portee_y = (emprise_y_mm / nb_travees_y) / 1000
+        portee_max = max(portee_x, portee_y)
+        portee_min = min(portee_x, portee_y)
+    else:
+        portee_max = 5.0
+        portee_min = 4.0
 
-    # ── Determine portée from dimensions ──
-    portee_max = max(portees) / 100 if portees else 0  # cm → m
-    portee_min = min(portees) / 100 if portees else 0
+    # Clamp portées to reasonable structural range
+    portee_max = min(max(portee_max, 3.0), 12.0)
+    portee_min = min(max(portee_min, 2.5), portee_max)
 
-    # If no portées found in dimensions, estimate from axes
-    if portee_max == 0 and nb_axes_x > 1 and emprise_x > 0:
-        portee_max = (emprise_x / (nb_axes_x - 1)) / 1000  # mm → m
-        portee_min = portee_max * 0.7
+    # ── Surface emprise ──
+    emprise_x_m = emprise_x_mm / 1000
+    emprise_y_m = emprise_y_mm / 1000
+    surface = emprise_x_m * emprise_y_m
+    # For very large values (axes span full drawing), use 70% as building footprint
+    if surface > 5000:
+        surface = surface * 0.7
 
     return {
         "layers": dict(layers.most_common(20)),
         "nb_axes_x": nb_axes_x,
         "nb_axes_y": nb_axes_y,
-        "axes_x_lengths_mm": sorted(set(axes_x)),
-        "axes_y_lengths_mm": sorted(set(axes_y)),
-        "emprise_x_mm": emprise_x,
-        "emprise_y_mm": emprise_y,
-        "emprise_x_m": round(emprise_x / 1000, 2),
-        "emprise_y_m": round(emprise_y / 1000, 2),
-        "nb_travees_x": max(nb_axes_x - 1, 1),
-        "nb_travees_y": max(nb_axes_y - 1, 1),
+        "axes_raw_count": len(axes_lines),
+        "axes_length_groups": [(l, c) for l, c in top_lengths[:5]],
+        "emprise_x_mm": emprise_x_mm,
+        "emprise_y_mm": emprise_y_mm,
+        "emprise_x_m": round(emprise_x_m, 2),
+        "emprise_y_m": round(emprise_y_m, 2),
+        "surface_emprise_m2": round(surface, 1),
+        "nb_travees_x": nb_travees_x,
+        "nb_travees_y": nb_travees_y,
         "portee_max_m": round(portee_max, 2),
         "portee_min_m": round(portee_min, 2),
-        "dimensions_all_cm": sorted(dim_values),
-        "portees_cm": portees,
-        "epaisseurs_mur_cm": mur_eps,
-        "room_dims_cm": room_dims,
+        "portees_cm": portees[:20],
+        "epaisseurs_mur_cm": mur_eps[:10],
         "nb_murs": mur_count,
         "nb_dimensions": len(dimensions),
         "nb_total_objects": len(properties),
@@ -419,13 +497,8 @@ def parser_dwg_aps(filepath: str, nb_niveaux: int = None, ville: str = "Dakar") 
         # Analyze geometry
         geo = extract_geometry(properties)
 
-        # Compute surface
-        surface = (geo["emprise_x_m"] * geo["emprise_y_m"])
-        if surface < 50:
-            # Fallback: estimate from dimension data
-            if geo["portees_cm"]:
-                avg_portee = sum(geo["portees_cm"]) / len(geo["portees_cm"]) / 100
-                surface = avg_portee * avg_portee * geo["nb_travees_x"] * geo["nb_travees_y"]
+        # Surface comes from extract_geometry now
+        surface = geo["surface_emprise_m2"]
 
         # Build engine input
         donnees_moteur = {
@@ -457,8 +530,11 @@ def parser_dwg_aps(filepath: str, nb_niveaux: int = None, ville: str = "Dakar") 
             "geometrie": {
                 "nb_axes_x": geo["nb_axes_x"],
                 "nb_axes_y": geo["nb_axes_y"],
+                "axes_raw_count": geo["axes_raw_count"],
+                "axes_length_groups": geo["axes_length_groups"],
                 "emprise_x_m": geo["emprise_x_m"],
                 "emprise_y_m": geo["emprise_y_m"],
+                "surface_emprise_m2": geo["surface_emprise_m2"],
                 "portee_max_m": geo["portee_max_m"],
                 "portee_min_m": geo["portee_min_m"],
                 "nb_travees_x": geo["nb_travees_x"],
@@ -466,8 +542,8 @@ def parser_dwg_aps(filepath: str, nb_niveaux: int = None, ville: str = "Dakar") 
                 "nb_murs": geo["nb_murs"],
                 "nb_dimensions": geo["nb_dimensions"],
                 "nb_total_objects": geo["nb_total_objects"],
-                "portees_cm": geo["portees_cm"][:20],
-                "epaisseurs_mur_cm": geo["epaisseurs_mur_cm"][:10],
+                "portees_cm": geo["portees_cm"],
+                "epaisseurs_mur_cm": geo["epaisseurs_mur_cm"],
                 "layers": geo["layers"],
                 "room_labels": geo["room_labels"],
             },
