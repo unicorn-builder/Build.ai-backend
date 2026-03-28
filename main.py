@@ -294,11 +294,22 @@ async def parse_fichier(
     ville: Optional[str] = Form(None),
     beton: Optional[str] = Form(None),
 ):
-    from parse_plans import extraire_params
     tmp_path = await save_upload(file)
     try:
-        result = extraire_params(tmp_path)
+        filename = file.filename or ""
+        ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+        if ext == "dwg":
+            from aps_parser_v2 import parser_dwg_aps
+            result = parser_dwg_aps(tmp_path, nb_niveaux=nb_niveaux, ville=ville or "Dakar")
+        else:
+            from parse_plans import extraire_params
+            result = extraire_params(tmp_path)
         if result.get("ok"):
+            dm = result.get("donnees_moteur", {})
+            if dm:
+                if nb_niveaux: dm["nb_niveaux"] = nb_niveaux
+                if ville: dm["ville"] = ville
+                if beton: dm["classe_beton"] = beton
             if nb_niveaux: result["nb_niveaux"] = nb_niveaux
             if ville:      result["ville"] = ville
             if beton:      result["classe_beton"] = beton
