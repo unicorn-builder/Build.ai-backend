@@ -972,6 +972,14 @@ def generer_dossier_ba(output_path: str, resultats=None, params: dict = None):
 
         resultats = _RC()
 
+    # ── Adapter moteur v2 → format attendu par les planches ──
+    if not hasattr(resultats, 'poteaux_par_niveau') and hasattr(resultats, 'poteaux'):
+        resultats.poteaux_par_niveau = resultats.poteaux
+    if not hasattr(resultats, 'poutre_type') and hasattr(resultats, 'poutre_principale'):
+        resultats.poutre_type = resultats.poutre_principale
+    if not hasattr(resultats, 'fondation') and hasattr(resultats, 'fondation'):
+        pass  # already exists
+
     planche_coffrage(c, resultats, params, date_str)
     planche_ferraillage_poteaux(c, resultats, params, date_str)
     planche_ferraillage_poutres(c, resultats, params, date_str)
