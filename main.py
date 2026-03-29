@@ -982,7 +982,10 @@ async def download_f2d(urn: str, f2d_path: str):
         token = get_token()
         # URL APS pour telecharger un fichier derivatif
         encoded_urn = urn
-        url = f"https://developer.api.autodesk.com/modelderivative/v2/designdata/{encoded_urn}/manifest/{f2d_path}"
+        import urllib.parse
+        safe_urn = urllib.parse.quote(urn, safe='')
+        safe_path = urllib.parse.quote(f2d_path, safe='')
+        url = f"https://developer.api.autodesk.com/modelderivative/v2/designdata/{safe_urn}/manifest/{safe_path}"
         req = ur.Request(url, headers={"Authorization": f"Bearer {token}"})
         with ur.urlopen(req) as resp:
             data = resp.read()
