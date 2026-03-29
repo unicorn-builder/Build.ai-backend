@@ -456,8 +456,13 @@ def extract_layer_objects(properties: list, layer_name: str) -> list:
             "layer": layer,
         }
 
+        # Dump ALL property groups for debugging
+        obj["all_props"] = {grp: dict(vals) for grp, vals in p.items()
+                           if isinstance(vals, dict)}
+
         # Position
-        for key in ("Position X", "Start X", "Center X", "Insertion Point X"):
+        for key in ("Position X", "Start X", "Center X", "Insertion Point X",
+                    "X", "Origin X", "Base Point X"):
             if key in geom:
                 try: obj["x"] = float(str(geom[key]).replace(",","."))
                 except: pass
