@@ -672,6 +672,24 @@ async def generate_planches(params: ParamsProjet):
 
 
 
+
+@app.post("/generate-plu")
+async def generate_plu(params: ParamsProjet):
+    """Plans PLU (plomberie/sanitaire) PDF — 11 planches A3."""
+    try:
+        from generate_plans_plu_v1 import generer_plans_plu
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+            out_path = tmp.name
+        generer_plans_plu(out_path, params=params.dict())
+        with open(out_path, "rb") as f:
+            pdf_bytes = f.read()
+        os.unlink(out_path)
+        gc.collect()
+        return pdf_response(pdf_bytes, fname(params, "plans_PLU"))
+    except Exception as e:
+        logger.error(f"/generate-plu error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/chat")
 async def chat_projet(request: Request):
     """Chat LLM avec contexte projet — fine-tuning outputs."""
