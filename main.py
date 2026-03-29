@@ -707,6 +707,22 @@ async def parse_layer(urn: str, layer: str = "SANITAIRE", guid: str = None):
         logger.error(f"/parse/layer error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
+@app.get("/parse/manifest")
+async def parse_manifest(urn: str):
+    """Retourne le manifest SVF2 complet pour inspecter les fichiers geometry."""
+    try:
+        from aps_parser_v2 import get_token
+        import urllib.request
+        token = get_token()
+        url = f"https://developer.api.autodesk.com/modelderivative/v2/designdata/{urn}/manifest"
+        req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
+        with urllib.request.urlopen(req) as resp:
+            data = json.loads(resp.read())
+        return data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/chat")
 async def chat_projet(request: Request):
     """Chat LLM avec contexte projet — fine-tuning outputs."""
