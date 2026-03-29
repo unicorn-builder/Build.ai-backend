@@ -713,7 +713,7 @@ async def parse_manifest(urn: str):
     """Retourne le manifest SVF2 complet pour inspecter les fichiers geometry."""
     try:
         from aps_parser_v2 import get_token
-        import urllib.request
+        import urllib.request, json
         token = get_token()
         url = f"https://developer.api.autodesk.com/modelderivative/v2/designdata/{urn}/manifest"
         req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
