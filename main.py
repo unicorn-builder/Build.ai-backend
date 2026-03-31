@@ -178,6 +178,7 @@ class ParamsProjet(BaseModel):
     # Optionnel
     sol_context:        Optional[str] = None
     avec_sous_sol:      bool  = False
+    urn:                Optional[str] = None
 
 
 # ════════════════════════════════════════════════════════════
@@ -695,15 +696,18 @@ async def generate_plu(params: ParamsProjet):
 
 @app.post("/generate-plans-structure")
 async def generate_plans_structure(params: ParamsProjet):
-    """Plans structure PDF — 100% paramétrique depuis ResultatsStructure."""
+    """Plans structure PDF — paramétrique depuis ResultatsStructure + géométrie APS du projet."""
     try:
         _, _, calculer_structure = get_moteur_structure()
         from generate_plans_structure_mep import generer_plans_structure
         donnees = params_to_donnees(params)
         rs = calculer_structure(donnees)
+        # Load THIS project's geometry from APS if URN available
+        dwg_geometry = _load_project_geometry(params.urn) if params.urn else None
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
             out_path = tmp.name
-        generer_plans_structure(out_path, resultats=rs, params=params.dict())
+        generer_plans_structure(out_path, resultats=rs, params=params.dict(),
+                                dwg_geometry=dwg_geometry)
         with open(out_path, "rb") as f:
             pdf_bytes = f.read()
         os.unlink(out_path)
@@ -716,7 +720,7 @@ async def generate_plans_structure(params: ParamsProjet):
 
 @app.post("/generate-plans-mep")
 async def generate_plans_mep(params: ParamsProjet):
-    """Plans MEP PDF — 100% paramétrique depuis ResultatsMEP."""
+    """Plans MEP PDF — paramétrique depuis ResultatsMEP + géométrie APS du projet."""
     try:
         _, _, calculer_structure = get_moteur_structure()
         calculer_mep = get_moteur_mep()
@@ -724,10 +728,11 @@ async def generate_plans_mep(params: ParamsProjet):
         donnees = params_to_donnees(params)
         rs = calculer_structure(donnees)
         rm = calculer_mep(donnees, rs)
+        dwg_geometry = _load_project_geometry(params.urn) if params.urn else None
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
             out_path = tmp.name
-        generer_plans_mep(out_path, resultats_mep=rm,
-                          resultats_structure=rs, params=params.dict())
+        generer_plans_mep(out_path, resultats_mep=rm, resultats_structure=rs,
+                          params=params.dict(), dwg_geometry=dwg_geometry)
         with open(out_path, "rb") as f:
             pdf_bytes = f.read()
         os.unlink(out_path)
@@ -736,6 +741,99 @@ async def generate_plans_mep(params: ParamsProjet):
     except Exception as e:
         logger.error(f"/generate-plans-mep error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+def _load_project_geometry(urn: str) -> dict:
+    """
+    Load real DWG geometry for THIS specific project from APS.
+    Returns dict with walls, axes, rooms, dimensions — or None on failure.
+    Each project has its own URN, its own geometry, its own calculations.
+    """
+    if not urn:
+        return None
+    try:
+        from aps_parser_v2 import get_token, get_viewable_guids, get_properties, extract_layer_objects
+        token = get_token()
+
+        # Get 2D viewable
+        viewables = get_viewable_guids(urn, token)
+        guid = None
+        for v in viewables:
+            if v.get("role") == "2d":
+                guid = v["guid"]; break
+        if not guid and viewables:
+            guid = viewables[0]["guid"]
+        if not guid:
+            logger.warning("No viewable found for URN %s", urn[:20])
+            return None
+
+        token = get_token()
+        properties = get_properties(urn, guid, token)
+        if not properties:
+            logger.warning("No properties for URN %s", urn[:20])
+            return None
+
+        # Extract geometry per architectural layer
+        wall_layers = ['MUR', 'MURS', 'A-MUR', 'WALL', 'WALLS', '0_MURS']
+        window_layers = ['A-ALUMINIUM', 'ALUMINIUM', 'A-GLAZ', 'A-VERRE']
+        door_layers = ['DOOR', 'S_Doors', 'BOIS', 'PORTE']
+        sanitary_layers = ['SANITAIRE', 'A-SANITAIRES', 'AM FITTING-SANITARY']
+
+        geometry = {'walls': [], 'windows': [], 'doors': [], 'sanitary': [], 'rooms': []}
+
+        for layer_name in wall_layers:
+            objs = extract_layer_objects(properties, layer_name)
+            for obj in objs:
+                if 'x' in obj and 'y' in obj:
+                    if 'x2' in obj and 'y2' in obj:
+                        geometry['walls'].append({
+                            'type': 'line',
+                            'start': [obj['x'], obj['y']],
+                            'end': [obj['x2'], obj['y2']]
+                        })
+                    else:
+                        geometry['walls'].append({
+                            'type': 'point', 'x': obj['x'], 'y': obj['y']
+                        })
+
+        for layer_name in window_layers:
+            objs = extract_layer_objects(properties, layer_name)
+            for obj in objs:
+                if 'x' in obj and 'y' in obj and 'x2' in obj and 'y2' in obj:
+                    geometry['windows'].append({
+                        'type': 'line',
+                        'start': [obj['x'], obj['y']],
+                        'end': [obj['x2'], obj['y2']]
+                    })
+
+        for layer_name in door_layers:
+            objs = extract_layer_objects(properties, layer_name)
+            for obj in objs:
+                if 'x' in obj and 'y' in obj:
+                    geometry['doors'].append({
+                        'type': 'line',
+                        'start': [obj['x'], obj['y']],
+                        'end': [obj.get('x2', obj['x']+500), obj.get('y2', obj['y'])]
+                    })
+
+        # Room labels
+        for layer_name in ['Etiquettes de pièces', 'TEXTES', 'TEXT_3']:
+            objs = extract_layer_objects(properties, layer_name)
+            for obj in objs:
+                if 'x' in obj and 'y' in obj and obj.get('text'):
+                    geometry['rooms'].append({
+                        'name': obj['text'], 'x': obj['x'], 'y': obj['y']
+                    })
+
+        wall_count = len(geometry['walls'])
+        logger.info("Loaded %d walls, %d windows, %d rooms from APS URN %s",
+                     wall_count, len(geometry['windows']), len(geometry['rooms']), urn[:20])
+
+        return geometry if wall_count > 5 else None
+
+    except Exception as e:
+        logger.warning("Failed to load geometry from APS: %s", e)
+        return None
 
 
 @app.get("/parse/layer")

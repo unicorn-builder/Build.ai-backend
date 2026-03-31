@@ -129,10 +129,68 @@ def _bay_centers(grid):
 
 
 # ══════════════════════════════════════════════════════════════
+# DWG GEOMETRY OVERLAY — real architecture from THIS project's APS data
+# ══════════════════════════════════════════════════════════════
+
+def _dwg_bounds(dwg):
+    """Get bounding box of DWG geometry."""
+    xs, ys = [], []
+    for item in dwg.get('walls', []) + dwg.get('windows', []) + dwg.get('doors', []):
+        if item.get('type') == 'line':
+            xs += [item['start'][0], item['end'][0]]
+            ys += [item['start'][1], item['end'][1]]
+    if not xs: return None
+    return min(xs), min(ys), max(xs), max(ys)
+
+
+def _dwg_transform(dwg, margin=22*mm, bottom=44*mm):
+    """Create transform from DWG coords to page coords."""
+    bounds = _dwg_bounds(dwg)
+    if not bounds: return None, None, None
+    xn, yn, xx, yx = bounds
+    dw, dh = xx - xn, yx - yn
+    if dw < 1 or dh < 1: return None, None, None
+    aw = W - 2*margin - 70*mm
+    ah = H - margin - bottom - margin
+    sc = min(aw/dw, ah/dh)
+    ox = margin + (aw - dw*sc)/2
+    oy = bottom + (ah - dh*sc)/2
+    return lambda x: ox + (x-xn)*sc, lambda y: oy + (y-yn)*sc, sc
+
+
+def _draw_dwg_arch(c, dwg, tx, ty):
+    """Draw real DWG architecture as light background."""
+    # Walls
+    c.setStrokeColor(PAL['gris_f']); c.setLineWidth(0.5)
+    for item in dwg.get('walls', []):
+        if item.get('type') == 'line':
+            c.line(tx(item['start'][0]), ty(item['start'][1]),
+                   tx(item['end'][0]), ty(item['end'][1]))
+    # Windows
+    c.setStrokeColor(colors.HexColor("#90CAF9")); c.setLineWidth(0.3)
+    for item in dwg.get('windows', []):
+        if item.get('type') == 'line':
+            c.line(tx(item['start'][0]), ty(item['start'][1]),
+                   tx(item['end'][0]), ty(item['end'][1]))
+    # Doors
+    c.setStrokeColor(colors.HexColor("#BCAAA4")); c.setLineWidth(0.25)
+    for item in dwg.get('doors', []):
+        if item.get('type') == 'line':
+            c.line(tx(item['start'][0]), ty(item['start'][1]),
+                   tx(item['end'][0]), ty(item['end'][1]))
+    # Room labels
+    import re
+    c.setFillColor(PAL['gris']); c.setFont("Helvetica", 3)
+    for r in dwg.get('rooms', []):
+        if not re.match(r'^\d', r.get('name', '')):
+            c.drawCentredString(tx(r['x']), ty(r['y']), r['name'][:20])
+
+
+# ══════════════════════════════════════════════════════════════
 # STRUCTURE PLANS
 # ══════════════════════════════════════════════════════════════
 
-def generer_plans_structure(output_path, resultats=None, params=None, **_kwargs):
+def generer_plans_structure(output_path, resultats=None, params=None, dwg_geometry=None, **_kwargs):
     if resultats is None:
         raise ValueError("ResultatsStructure requis")
     rs = resultats; d = rs.params
@@ -145,6 +203,7 @@ def generer_plans_structure(output_path, resultats=None, params=None, **_kwargs)
     p = params if isinstance(params, dict) else (params.__dict__ if params else {})
     projet = p.get('nom', d.nom); ville = p.get('ville', d.ville)
     lieu = f"{ville}, {d.pays}"; grid = _build_grid(d)
+    has_dwg = dwg_geometry is not None and len(dwg_geometry.get('walls', [])) > 5
     mat = f"Béton {rs.classe_beton} (fck={rs.fck_MPa:.0f}MPa) — Acier {rs.classe_acier} (fyk={rs.fyk_MPa:.0f}MPa)"
     c = pdfcanvas.Canvas(output_path, pagesize=A3L)
     c.setTitle(f"Plans Structure — {projet}"); c.setAuthor("Tijan AI")
@@ -153,7 +212,17 @@ def generer_plans_structure(output_path, resultats=None, params=None, **_kwargs)
     positions = [(-1,-1),(1,-1),(1,1),(-1,1),(0,-1),(0,1),(-1,0),(1,0)]
 
     for level_code, alt in grid['levels']:
-        tx, ty, sc = _grid_tx(grid)
+        # Use real DWG geometry if available, otherwise parametric grid
+        if has_dwg:
+            tx, ty, sc = _dwg_transform(dwg_geometry)
+            if tx is None:
+                tx, ty, sc = _grid_tx(grid)
+                has_dwg_page = False
+            else:
+                has_dwg_page = True
+        else:
+            tx, ty, sc = _grid_tx(grid)
+            has_dwg_page = False
         pot_l = pot0
         for pot in rs.poteaux:
             if level_code in str(pot.niveau): pot_l = pot; break
@@ -162,7 +231,11 @@ def generer_plans_structure(output_path, resultats=None, params=None, **_kwargs)
         page += 1; draw_border(c)
         draw_cartouche(c, "PLAN DE COFFRAGE", page, total_pages, niveau=f"{level_code} ({alt:+.2f}m)",
                        projet=projet, lieu=lieu, lot="Structure")
-        draw_north(c); _draw_grid(c, grid, tx, ty)
+        draw_north(c)
+        # Real DWG architecture as background when available
+        if has_dwg_page:
+            _draw_dwg_arch(c, dwg_geometry, tx, ty)
+        _draw_grid(c, grid, tx, ty)
         _draw_dalle_hatch(c, grid, tx, ty, dalle.epaisseur_mm)
         _draw_poutres(c, grid, tx, ty, ps is not None)
         _draw_poteaux(c, grid, tx, ty, pot_l.section_mm)
@@ -312,7 +385,7 @@ def generer_plans_structure(output_path, resultats=None, params=None, **_kwargs)
 # MEP PLANS — 100% from ResultatsMEP
 # ══════════════════════════════════════════════════════════════
 
-def generer_plans_mep(output_path, resultats_mep=None, resultats_structure=None, params=None, **_kwargs):
+def generer_plans_mep(output_path, resultats_mep=None, resultats_structure=None, params=None, dwg_geometry=None, **_kwargs):
     if resultats_mep is None:
         raise ValueError("ResultatsMEP requis")
     rm = resultats_mep; d = rm.params
@@ -324,6 +397,7 @@ def generer_plans_mep(output_path, resultats_mep=None, resultats_structure=None,
     projet = p.get('nom', d.nom); ville = p.get('ville', d.ville)
     lieu = f"{ville}, {d.pays}"; grid = _build_grid(d)
     pot_sec = rs.poteaux[0].section_mm if rs and rs.poteaux else 300
+    has_dwg = dwg_geometry is not None and len(dwg_geometry.get('walls', [])) > 5
 
     c = pdfcanvas.Canvas(output_path, pagesize=A3L)
     c.setTitle(f"Plans MEP — {projet}"); c.setAuthor("Tijan AI")
@@ -380,11 +454,23 @@ def generer_plans_mep(output_path, resultats_mep=None, resultats_structure=None,
     for lot_titre, lot_name, notes_lines, legend_items, lot_key in sublots:
         for level_code, alt in grid['levels']:
             page += 1
-            tx, ty, sc = _grid_tx(grid)
+            # Use real DWG or parametric grid
+            if has_dwg:
+                tx_d, ty_d, sc_d = _dwg_transform(dwg_geometry)
+                if tx_d:
+                    tx, ty, sc = tx_d, ty_d, sc_d
+                    has_dwg_page = True
+                else:
+                    tx, ty, sc = _grid_tx(grid); has_dwg_page = False
+            else:
+                tx, ty, sc = _grid_tx(grid); has_dwg_page = False
             draw_border(c)
             draw_cartouche(c, lot_titre, page, total_pages, niveau=f"{level_code} ({alt:+.2f}m)",
                            projet=projet, lieu=lieu, lot=lot_name)
-            draw_north(c); _draw_grid(c, grid, tx, ty)
+            draw_north(c)
+            if has_dwg_page:
+                _draw_dwg_arch(c, dwg_geometry, tx, ty)
+            _draw_grid(c, grid, tx, ty)
             _draw_poteaux(c, grid, tx, ty, pot_sec)
             bays = _bay_centers(grid)
             nx, ny = grid['nx'], grid['ny']
