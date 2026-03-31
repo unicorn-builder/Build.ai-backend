@@ -275,6 +275,14 @@ def get_devise_info(ville: str) -> dict:
         return {"devise": "XOF", "symbole": "FCFA", "taux_vers_fcfa": 1.0, "taux_depuis_fcfa": 1.0, "pays": "Senegal"}
 
 
+def _get_converter_status():
+    try:
+        from dwg_converter import converter_status
+        return converter_status()["strategy"]
+    except:
+        return "unknown"
+
+
 # ════════════════════════════════════════════════════════════
 # ENDPOINTS
 # ════════════════════════════════════════════════════════════
@@ -290,6 +298,7 @@ async def health():
             "structure": "engine_structure_v2",
             "mep":       "engine_mep_v2",
             "prix":      "prix_marche — Dakar/Abidjan/Casablanca/Lagos/Accra",
+            "dwg_converter": _get_converter_status(),
         },
     }
 
@@ -301,28 +310,57 @@ async def parse_fichier(
     ville: Optional[str] = Form(None),
     beton: Optional[str] = Form(None),
 ):
+    """
+    Parse a single plan file.
+    DWG → convert to DXF (ODA local or APS fallback) → ezdxf geometry extraction
+    DXF → ezdxf directly
+    PDF → text extraction + Claude AI
+    """
     tmp_path = await save_upload(file)
+    dxf_path = None
     try:
         filename = file.filename or ""
         ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
-        if ext == "dwg":
-            from aps_parser_v2 import parser_dwg_aps
-            result = parser_dwg_aps(tmp_path, nb_niveaux=nb_niveaux, ville=ville or "Dakar")
-        elif ext == "dxf":
-            from parse_plans import extraire_params
-            result = extraire_params(tmp_path)
-            # DXF: extract full geometry via ezdxf for plan generation
-            try:
-                dxf_geom = _extract_dxf_geometry(tmp_path)
-                if dxf_geom:
-                    result["dwg_geometry"] = dxf_geom
-                    logger.info("DXF geometry extracted: %d walls, %d rooms",
-                                len(dxf_geom.get('walls',[])), len(dxf_geom.get('rooms',[])))
-            except Exception as e:
-                logger.warning("DXF geometry extraction failed: %s", e)
+
+        if ext in ("dwg", "dxf"):
+            # Convert to DXF if needed (DWG → DXF via ODA or APS)
+            from dwg_converter import convert_to_dxf
+            if ext == "dwg":
+                dxf_path = convert_to_dxf(tmp_path, ville=ville or "Dakar")
+            else:
+                dxf_path = tmp_path  # already DXF
+
+            if dxf_path and os.path.isfile(dxf_path):
+                # Extract params via ezdxf + Claude
+                from parse_plans import extraire_params
+                result = extraire_params(dxf_path)
+                # Extract full geometry via ezdxf
+                try:
+                    dxf_geom = _extract_dxf_geometry(dxf_path)
+                    if dxf_geom:
+                        result["dwg_geometry"] = dxf_geom
+                        logger.info("Geometry extracted: %d walls, %d rooms",
+                                    len(dxf_geom.get('walls',[])), len(dxf_geom.get('rooms',[])))
+                except Exception as e:
+                    logger.warning("DXF geometry extraction failed: %s", e)
+            else:
+                # DXF conversion failed — fall back to APS for params only
+                logger.warning("DXF conversion failed, falling back to APS params-only")
+                from aps_parser_v2 import parser_dwg_aps
+                result = parser_dwg_aps(tmp_path, nb_niveaux=nb_niveaux, ville=ville or "Dakar")
+                # Try APS geometry extraction
+                if result.get("ok") and result.get("urn"):
+                    try:
+                        geom = _load_project_geometry(result["urn"])
+                        if geom:
+                            result["dwg_geometry"] = geom
+                    except Exception:
+                        pass
         else:
+            # PDF or other
             from parse_plans import extraire_params
             result = extraire_params(tmp_path)
+
         if result.get("ok"):
             dm = result.get("donnees_moteur", {})
             if dm:
@@ -332,16 +370,7 @@ async def parse_fichier(
             if nb_niveaux: result["nb_niveaux"] = nb_niveaux
             if ville:      result["ville"] = ville
             if beton:      result["classe_beton"] = beton
-            # For DWG: extract geometry from APS properties (already translated)
-            if result.get("urn") and not result.get("dwg_geometry"):
-                try:
-                    geom = _load_project_geometry(result["urn"])
-                    if geom:
-                        result["dwg_geometry"] = geom
-                        logger.info("APS geometry extracted: %d walls, %d rooms",
-                                    len(geom.get('walls',[])), len(geom.get('rooms',[])))
-                except Exception as e:
-                    logger.warning("APS geometry extraction in /parse failed: %s", e)
+
         return JSONResponse(content=result)
     except Exception as e:
         logger.error(f"/parse error: {e}")
@@ -349,6 +378,9 @@ async def parse_fichier(
     finally:
         try: os.unlink(tmp_path)
         except: pass
+        if dxf_path and dxf_path != tmp_path:
+            try: os.unlink(dxf_path)
+            except: pass
 
 
 # ══════════════════════════════════════════════════════════════
@@ -368,29 +400,105 @@ async def parse_multi_start(
     ville: Optional[str] = Form(None),
     beton: Optional[str] = Form(None),
 ):
-    """Upload N DWG files → returns job_id immediately. Parse happens in background."""
+    """
+    Parse N DWG/DXF files — one per building level.
+    With ODA: converts all to DXF locally (~2s each) → ezdxf geometry → returns immediately.
+    Without ODA: falls back to async APS processing.
+    """
+    from dwg_converter import converter_status, convert_to_dxf
+
     saved = []
     for f in files:
         saved.append((f.filename, await save_upload(f)))
+    logger.info(f"/parse-multi: {len(saved)} files, converter: {converter_status()['strategy']}")
 
-    job_id = str(uuid.uuid4())[:12]
-    _parse_jobs[job_id] = {
-        "status": "processing",
-        "progress": f"0/{len(saved)}",
-        "total": len(saved),
-        "done": 0,
-        "result": None,
-        "error": None,
-    }
-    logger.info(f"/parse-multi: job {job_id} started with {len(saved)} files")
+    status = converter_status()
 
-    # Launch background thread
-    t = threading.Thread(target=_parse_multi_worker,
-                         args=(job_id, saved, nb_niveaux, ville or "Dakar", beton),
-                         daemon=True)
-    t.start()
+    if status["oda_available"]:
+        # FAST PATH: ODA converts all DWG→DXF locally, then ezdxf reads them
+        return await _parse_multi_fast(saved, nb_niveaux, ville or "Dakar", beton)
+    else:
+        # SLOW PATH: async APS — launch background thread
+        job_id = str(uuid.uuid4())[:12]
+        _parse_jobs[job_id] = {
+            "status": "processing", "progress": f"0/{len(saved)}",
+            "total": len(saved), "done": 0, "result": None, "error": None,
+        }
+        t = threading.Thread(target=_parse_multi_worker,
+                             args=(job_id, saved, nb_niveaux, ville or "Dakar", beton),
+                             daemon=True)
+        t.start()
+        return JSONResponse(content={"ok": True, "job_id": job_id, "files_count": len(saved),
+                                     "async": True, "strategy": "aps"})
 
-    return JSONResponse(content={"ok": True, "job_id": job_id, "files_count": len(saved)})
+
+async def _parse_multi_fast(saved_files, nb_niveaux, ville, beton):
+    """Fast multi-file parsing via ODA + ezdxf. Returns result directly (no polling)."""
+    from dwg_converter import convert_to_dxf
+    import time as _time
+
+    start = _time.time()
+    niv = nb_niveaux or len(saved_files)
+    dwg_geometry = {}
+    main_result = None
+    dxf_temps = []
+
+    # Sort by size desc — biggest first for main params
+    sorted_files = sorted(saved_files, key=lambda x: os.path.getsize(x[1]), reverse=True)
+
+    for i, (filename, filepath) in enumerate(sorted_files):
+        dxf_path = None
+        try:
+            # Convert to DXF
+            dxf_path = convert_to_dxf(filepath, ville)
+            if not dxf_path:
+                logger.warning(f"  {filename}: DXF conversion failed")
+                continue
+
+            # Extract geometry via ezdxf
+            dxf_geom = _extract_dxf_geometry(dxf_path)
+
+            # First file (biggest) → extract params too
+            if i == 0:
+                from parse_plans import extraire_params
+                main_result = extraire_params(dxf_path)
+
+            if dxf_geom:
+                level_key = _classify_level_from_name(filename, i)
+                dxf_geom['label'] = filename.rsplit('.', 1)[0]
+                dwg_geometry[level_key] = dxf_geom
+                walls = len(dxf_geom.get('walls', []))
+                rooms = len(dxf_geom.get('rooms', []))
+                logger.info(f"  {level_key}: {walls} walls, {rooms} rooms")
+
+        except Exception as e:
+            logger.warning(f"  {filename} failed: {e}")
+        finally:
+            if dxf_path and dxf_path != filepath:
+                try: os.unlink(dxf_path)
+                except: pass
+            try: os.unlink(filepath)
+            except: pass
+
+    elapsed = _time.time() - start
+    logger.info(f"/parse-multi FAST: {len(dwg_geometry)} levels in {elapsed:.1f}s")
+
+    if not main_result or not main_result.get("ok"):
+        main_result = {"ok": True, "source": "multi_dwg"}
+
+    main_result["nb_niveaux"] = niv
+    main_result["files_count"] = len(saved_files)
+    main_result["levels_detected"] = list(dwg_geometry.keys())
+    main_result["parse_time_s"] = round(elapsed, 1)
+    if main_result.get("donnees_moteur"):
+        main_result["donnees_moteur"]["nb_niveaux"] = niv
+    else:
+        main_result["donnees_moteur"] = {"nb_niveaux": niv, "ville": ville}
+
+    if dwg_geometry:
+        main_result["dwg_geometry"] = dwg_geometry
+
+    return JSONResponse(content=main_result)
 
 
 @app.get("/parse-status/{job_id}")
