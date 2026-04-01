@@ -286,28 +286,34 @@ def pdf_to_geometry(pdf_path: str) -> dict:
             page = doc[page_idx]
             drawings = page.get_drawings()
 
+            # Collect all line widths to determine classification threshold
+            all_widths = []
+            all_lines = []
             for drawing in drawings:
-                color = drawing.get("color", (0, 0, 0))
-                width = drawing.get("width", 0)
+                width = drawing.get("width") or 0
                 items = drawing.get("items", [])
-
                 for item in items:
                     if item[0] == "l":  # line
                         p1, p2 = item[1], item[2]
-                        # Scale: PDF coords are in points (72 dpi)
-                        # Convert to mm (typical CAD units)
-                        scale = 25.4 / 72  # points to mm... but PDF from CAD
-                        # may already be in real-world coords
                         line = {
                             'type': 'line',
                             'start': [round(p1.x, 1), round(p1.y, 1)],
                             'end': [round(p2.x, 1), round(p2.y, 1)]
                         }
-                        # Thick lines = walls, thin = other
-                        if width >= 0.5:
-                            geometry['walls'].append(line)
-                        elif width >= 0.2:
-                            geometry['windows'].append(line)
+                        all_lines.append((line, width))
+                        all_widths.append(width)
+
+            # Classify lines: if all widths are 0 (CAD PDF), treat all as walls
+            # Otherwise use width threshold
+            max_width = max(all_widths) if all_widths else 0
+            for line, width in all_lines:
+                if max_width < 0.01:
+                    # All widths zero — all lines are walls
+                    geometry['walls'].append(line)
+                elif width >= max_width * 0.3:
+                    geometry['walls'].append(line)
+                elif width >= max_width * 0.1:
+                    geometry['windows'].append(line)
 
             # Extract text annotations (room labels)
             blocks = page.get_text("dict")["blocks"]
