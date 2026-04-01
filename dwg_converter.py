@@ -286,34 +286,38 @@ def pdf_to_geometry(pdf_path: str) -> dict:
             page = doc[page_idx]
             drawings = page.get_drawings()
 
-            # Collect all line widths to determine classification threshold
-            all_widths = []
-            all_lines = []
+            # Extract lines, filter out hatch/patterns (very short lines)
+            # and keep only structural lines (walls, openings)
+            import math as _math
+            # PDF scale: 1pt = 0.35mm at 72dpi
+            # Walls are typically > 20pt (7mm on page = ~1m at 1:150 scale)
+            # Details/symbols are 5-20pt
+            # Hatch patterns are < 5pt
+            MIN_WALL_LENGTH = 20
+            MIN_WINDOW_LENGTH = 10
+
             for drawing in drawings:
                 width = drawing.get("width") or 0
                 items = drawing.get("items", [])
                 for item in items:
                     if item[0] == "l":  # line
                         p1, p2 = item[1], item[2]
+                        length = _math.hypot(p2.x - p1.x, p2.y - p1.y)
+
+                        # Skip very short lines — hatch patterns, symbols
+                        if length < MIN_WINDOW_LENGTH:
+                            continue
+
                         line = {
                             'type': 'line',
                             'start': [round(p1.x, 1), round(p1.y, 1)],
                             'end': [round(p2.x, 1), round(p2.y, 1)]
                         }
-                        all_lines.append((line, width))
-                        all_widths.append(width)
 
-            # Classify lines: if all widths are 0 (CAD PDF), treat all as walls
-            # Otherwise use width threshold
-            max_width = max(all_widths) if all_widths else 0
-            for line, width in all_lines:
-                if max_width < 0.01:
-                    # All widths zero — all lines are walls
-                    geometry['walls'].append(line)
-                elif width >= max_width * 0.3:
-                    geometry['walls'].append(line)
-                elif width >= max_width * 0.1:
-                    geometry['windows'].append(line)
+                        if length >= MIN_WALL_LENGTH:
+                            geometry['walls'].append(line)
+                        else:
+                            geometry['windows'].append(line)
 
             # Extract text annotations (room labels)
             blocks = page.get_text("dict")["blocks"]
