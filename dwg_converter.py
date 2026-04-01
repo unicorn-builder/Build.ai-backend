@@ -1,9 +1,10 @@
 """
 dwg_converter.py — DWG ↔ DXF conversion
 
-Strategy:
-  1. ODA File Converter (local, instant, ~2s/file) — preferred
-  2. APS Model Derivative (cloud, ~2min/file) — fallback
+Strategy (in priority order):
+  1. LibreDWG dwg2dxf (local, instant, ~1s/file, apt-get install libredwg-tools)
+  2. ODA File Converter (local, instant, ~2s/file)
+  3. APS Model Derivative (cloud, ~2min/file) — fallback
 
 All inputs are converted to DXF (pivot format).
 ezdxf reads the DXF for full geometry extraction.
@@ -18,13 +19,23 @@ import time
 logger = logging.getLogger("dwg_converter")
 
 
+def _find_dwg2dxf():
+    """Find LibreDWG dwg2dxf binary."""
+    path = shutil.which('dwg2dxf')
+    if path:
+        return path
+    for p in ['/usr/bin/dwg2dxf', '/usr/local/bin/dwg2dxf']:
+        if os.path.isfile(p):
+            return p
+    return None
+
+
 def _find_oda():
     """Find ODA File Converter binary."""
     for name in ['ODAFileConverter', 'TeighaFileConverter']:
         path = shutil.which(name)
         if path:
             return path
-    # Common install locations
     for path in ['/usr/bin/ODAFileConverter', '/usr/local/bin/ODAFileConverter',
                  '/opt/ODAFileConverter/ODAFileConverter']:
         if os.path.isfile(path):
@@ -32,7 +43,41 @@ def _find_oda():
     return None
 
 
+DWG2DXF_PATH = _find_dwg2dxf()
 ODA_PATH = _find_oda()
+
+
+def dwg_to_dxf_libredwg(dwg_path: str) -> str:
+    """
+    Convert DWG → DXF using LibreDWG dwg2dxf.
+    ~1 second per file, no cloud, no API key.
+    """
+    if not DWG2DXF_PATH:
+        return None
+
+    try:
+        output = tempfile.mktemp(suffix='.dxf', prefix='tijan_')
+        cmd = [DWG2DXF_PATH, '-o', output, dwg_path]
+        logger.info(f"dwg2dxf converting {os.path.basename(dwg_path)}...")
+        start = time.time()
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        elapsed = time.time() - start
+        logger.info(f"dwg2dxf done in {elapsed:.1f}s (rc={result.returncode})")
+
+        if os.path.isfile(output) and os.path.getsize(output) > 100:
+            return output
+
+        logger.warning(f"dwg2dxf produced no output: stderr={result.stderr[:200]}")
+        try: os.unlink(output)
+        except: pass
+        return None
+
+    except subprocess.TimeoutExpired:
+        logger.warning("dwg2dxf timeout")
+        return None
+    except Exception as e:
+        logger.warning(f"dwg2dxf error: {e}")
+        return None
 
 
 def dwg_to_dxf_oda(dwg_path: str) -> str:
@@ -175,7 +220,14 @@ def convert_to_dxf(input_path: str, ville: str = "Dakar") -> str:
         return input_path  # already DXF
 
     if ext == '.dwg':
-        # Try ODA first (instant)
+        # Try LibreDWG first (fastest, open source)
+        if DWG2DXF_PATH:
+            dxf = dwg_to_dxf_libredwg(input_path)
+            if dxf:
+                logger.info(f"DWG→DXF via LibreDWG: {dxf}")
+                return dxf
+
+        # Try ODA (fast, free)
         if ODA_PATH:
             dxf = dwg_to_dxf_oda(input_path)
             if dxf:
@@ -183,13 +235,13 @@ def convert_to_dxf(input_path: str, ville: str = "Dakar") -> str:
                 return dxf
 
         # Fallback to APS (slow but works)
-        logger.info("ODA not available, falling back to APS for DWG→DXF")
+        logger.info("No local converter, falling back to APS for DWG→DXF")
         dxf = dwg_to_dxf_aps(input_path, ville=ville)
         if dxf:
             logger.info(f"DWG→DXF via APS: {dxf}")
             return dxf
 
-        logger.warning("DWG→DXF conversion failed (both ODA and APS)")
+        logger.warning("DWG→DXF conversion failed")
         return None
 
     logger.warning(f"Unsupported format for DXF conversion: {ext}")
@@ -226,8 +278,8 @@ def dxf_to_dwg(dxf_path: str) -> str:
 
 # Status
 def converter_status():
-    return {
-        "oda_available": ODA_PATH is not None,
-        "oda_path": ODA_PATH,
-        "strategy": "ODA (local, ~2s/file)" if ODA_PATH else "APS (cloud, ~2min/file)",
-    }
+    if DWG2DXF_PATH:
+        return {"strategy": "LibreDWG (local, ~1s/file)", "tool": DWG2DXF_PATH}
+    if ODA_PATH:
+        return {"strategy": "ODA (local, ~2s/file)", "tool": ODA_PATH}
+    return {"strategy": "APS (cloud, ~2min/file)", "tool": None}
