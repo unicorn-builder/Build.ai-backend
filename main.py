@@ -640,9 +640,9 @@ def _extract_dxf_geometry(filepath: str) -> dict:
     doc = ezdxf.readfile(filepath)
     msp = doc.modelspace()
 
-    wall_layers = {'MUR', 'MURS', 'A-MUR', '0_MURS', 'WALL', 'WALLS'}
-    window_layers = {'A-ALUMINIUM', 'ALUMINIUM', 'A-GLAZ', 'A-VERRE', 'A-HACH VERRE'}
-    door_layers = {'DOOR', 'S_Doors', 'BOIS', 'PORTE'}
+    wall_layers = {'MUR', 'MURS', 'A-MUR', '0_MURS', 'WALL', 'WALLS', 'A-WALL', 'I-WALL'}
+    window_layers = {'A-ALUMINIUM', 'ALUMINIUM', 'A-GLAZ', 'A-VERRE', 'A-HACH VERRE', 'A-GLAZ'}
+    door_layers = {'DOOR', 'S_Doors', 'BOIS', 'PORTE', 'A-DOOR'}
     sanitary_layers = {'SANITAIRE', 'A-SANITAIRES', 'AM FITTING-SANITARY', 'STR_SANITARY'}
 
     geometry = {'walls': [], 'windows': [], 'doors': [], 'sanitary': [], 'rooms': []}
@@ -1138,9 +1138,9 @@ def _load_project_geometry(urn: str) -> dict:
             return None
 
         # Extract geometry per architectural layer
-        wall_layers = ['MUR', 'MURS', 'A-MUR', 'WALL', 'WALLS', '0_MURS']
-        window_layers = ['A-ALUMINIUM', 'ALUMINIUM', 'A-GLAZ', 'A-VERRE']
-        door_layers = ['DOOR', 'S_Doors', 'BOIS', 'PORTE']
+        wall_layers = ['MUR', 'MURS', 'A-MUR', 'WALL', 'WALLS', '0_MURS', 'A-WALL', 'I-WALL']
+        window_layers = ['A-ALUMINIUM', 'ALUMINIUM', 'A-GLAZ', 'A-VERRE', 'A-GLAZ']
+        door_layers = ['DOOR', 'S_Doors', 'BOIS', 'PORTE', 'A-DOOR']
         sanitary_layers = ['SANITAIRE', 'A-SANITAIRES', 'AM FITTING-SANITARY']
 
         geometry = {'walls': [], 'windows': [], 'doors': [], 'sanitary': [], 'rooms': []}
