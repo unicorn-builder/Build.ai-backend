@@ -216,11 +216,14 @@ def _dwg_layout(w, h, dwg, ml=42*mm, mb=48*mm, mr=65*mm, mt=28*mm):
     return tx, ty, sc, gw, gh
 
 
-def _draw_dwg(c, dwg, tx, ty):
-    """Dessine la géométrie DWG réelle (murs, fenêtres, portes, labels)."""
+def _draw_dwg(c, dwg, tx, ty, light=False):
+    """Dessine la géométrie DWG réelle (murs, fenêtres, portes, labels).
+    light=True pour les plans MEP (architecture très claire en fond)."""
     import re
     # Murs
-    c.setStrokeColor(GRIS2); c.setLineWidth(0.5)
+    wall_color = GRIS4 if light else GRIS2
+    wall_width = 0.35 if light else 0.5
+    c.setStrokeColor(wall_color); c.setLineWidth(wall_width)
     for item in dwg.get('walls', []):
         if item['type'] == 'line':
             c.line(tx(item['start'][0]), ty(item['start'][1]),
@@ -940,7 +943,7 @@ def generer_plans_mep(output_path, resultats_mep=None, resultats_structure=None,
         if level_geom and len(level_geom.get('walls', [])) >= 5:
             dwg_tx, dwg_ty, dwg_sc, dwg_gw, dwg_gh = _dwg_layout(w, h, level_geom)
             if dwg_tx:
-                _draw_dwg(c, level_geom, dwg_tx, dwg_ty)
+                _draw_dwg(c, level_geom, dwg_tx, dwg_ty, light=True)
                 tx, ty = dwg_tx, dwg_ty
                 bounds = _dwg_bounds(level_geom)
                 ox = tx(bounds[0]); oy = ty(bounds[1])
@@ -968,15 +971,20 @@ def generer_plans_mep(output_path, resultats_mep=None, resultats_structure=None,
         # Positionnée à côté de la première gaine ascenseur
         # Tous les réseaux convergent vers ce point via collecteurs horizontaux
         def _draw_gt(c, gtx, gty, label, color):
-            """Dessine la gaine technique avec label."""
-            c.setFillColor(color); c.setStrokeColor(NOIR); c.setLineWidth(0.7)
-            c.rect(gtx-5, gty-5, 10, 10, fill=1, stroke=1)
-            c.setFillColor(BLANC); c.setFont("Helvetica-Bold", 4)
-            c.drawCentredString(gtx, gty-2, label)
-            # Symbole passage vertical (flèche haut/bas)
-            c.setStrokeColor(BLANC); c.setLineWidth(0.5)
-            c.line(gtx-2, gty+2, gtx, gty+4); c.line(gtx+2, gty+2, gtx, gty+4)
-            c.line(gtx-2, gty-4, gtx, gty-6); c.line(gtx+2, gty-4, gtx, gty-6)
+            """Dessine la gaine technique avec label — symbole BET standard."""
+            # Fond carré avec bordure
+            c.setFillColor(color); c.setStrokeColor(NOIR); c.setLineWidth(0.8)
+            c.rect(gtx-7, gty-7, 14, 14, fill=1, stroke=1)
+            # Label
+            c.setFillColor(BLANC); c.setFont("Helvetica-Bold", 6)
+            c.drawCentredString(gtx, gty-2.5, label)
+            # Flèches passage vertical
+            c.setStrokeColor(BLANC); c.setLineWidth(0.6)
+            c.line(gtx-3, gty+3, gtx, gty+6); c.line(gtx+3, gty+3, gtx, gty+6)
+            c.line(gtx-3, gty-5, gtx, gty-8); c.line(gtx+3, gty-5, gtx, gty-8)
+            # Label technique sous la GT
+            c.setFillColor(color); c.setFont("Helvetica-Bold", 3.5)
+            c.drawCentredString(gtx, gty-12, "GAINE TECHNIQUE")
 
         def _route_to_gt(c, fx, fy, gtx, gty, color, width=0.6, dash=None):
             """Route un réseau d'un point vers la GT en L-shape."""
@@ -1009,26 +1017,40 @@ def generer_plans_mep(output_path, resultats_mep=None, resultats_structure=None,
 
             if key == "plb_ef":
                 _draw_gt(c, gtx_p, gty_p, "EF", BLEU)
-                c.setFillColor(BLEU); c.setFont("Helvetica", 3)
-                c.drawString(gtx_p+7, gty_p+3, f"CM EF DN{pl.diam_colonne_montante_mm}")
+                c.setFillColor(BLEU); c.setFont("Helvetica-Bold", 3.5)
+                c.drawString(gtx_p+10, gty_p+5, f"CM EF DN{pl.diam_colonne_montante_mm}")
+                c.setFont("Helvetica", 3)
+                c.drawString(gtx_p+10, gty_p, f"Citerne {int(pl.volume_citerne_m3)}m³")
                 for wr in wet_r:
                     wx, wy = tx(wr['x']), ty(wr['y'])
-                    _route_to_gt(c, wx, wy, gtx_p, gty_p, BLEU, 0.6)
+                    _route_to_gt(c, wx, wy, gtx_p, gty_p, BLEU, 0.5)
                     n = wr.get('name','').lower()
                     if 'sdb' in n or 'douche' in n:
-                        c.setFillColor(BLANC); c.setStrokeColor(BLEU); c.setLineWidth(0.5)
-                        c.circle(wx, wy, 2.5, fill=1, stroke=1)
+                        c.setFillColor(BLANC); c.setStrokeColor(BLEU); c.setLineWidth(0.6)
+                        c.circle(wx, wy, 3.5, fill=1, stroke=1)
+                        c.setFillColor(BLEU); c.setFont("Helvetica-Bold", 2.5)
+                        c.drawCentredString(wx, wy-1, "SDB")
                     elif 'wc' in n or 'toil' in n:
-                        c.setFillColor(BLEU); c.circle(wx, wy, 2, fill=1, stroke=0)
+                        c.setFillColor(BLEU); c.circle(wx, wy, 3, fill=1, stroke=0)
+                        c.setFillColor(BLANC); c.setFont("Helvetica-Bold", 2.5)
+                        c.drawCentredString(wx, wy-1, "WC")
                     elif 'cuisine' in n or 'kitch' in n:
-                        c.setFillColor(BLEU); c.rect(wx-2.5, wy-1.5, 5, 3, fill=1, stroke=0)
+                        c.setFillColor(BLEU); c.rect(wx-4, wy-2.5, 8, 5, fill=1, stroke=0)
+                        c.setFillColor(BLANC); c.setFont("Helvetica-Bold", 2.5)
+                        c.drawCentredString(wx, wy-1, "CUI")
                     elif 'buanderie' in n:
-                        c.setFillColor(CYAN); c.rect(wx-2, wy-2, 4, 4, fill=1, stroke=0)
-                notes = [f"CM EF DN{pl.diam_colonne_montante_mm}", f"Citerne {int(pl.volume_citerne_m3)}m³",
-                         f"Surpresseur {pl.debit_surpresseur_m3h}m³/h"]
-                _legend(c, w, h, [(BLEU, 'fill', "Gaine technique (GT)"),
-                                  (BLEU, 0.6, "Distribution EF"), (BLEU, 'circle', "SDB/Douche"),
-                                  (BLEU, 'fill', "WC"), (BLEU, 'fill', "Évier")])
+                        c.setFillColor(CYAN); c.rect(wx-3.5, wy-2.5, 7, 5, fill=1, stroke=0)
+                        c.setFillColor(BLANC); c.setFont("Helvetica-Bold", 2)
+                        c.drawCentredString(wx, wy-1, "BUA")
+                notes = [f"Colonne montante EF DN{pl.diam_colonne_montante_mm}",
+                         f"Citerne {int(pl.volume_citerne_m3)}m³ — Surpresseur {pl.debit_surpresseur_m3h}m³/h",
+                         f"{pl.nb_robinets_eco} robinets économiseurs — {pl.nb_wc_double_chasse} WC double chasse"]
+                _legend(c, w, h, [(BLEU, 'fill', f"GT — CM EF DN{pl.diam_colonne_montante_mm}"),
+                                  (BLEU, 0.5, "Distribution EF"),
+                                  (BLEU, 'circle', "SDB / Douche"),
+                                  (BLEU, 'fill', "WC / Toilettes"),
+                                  (BLEU, 'fill', "Évier cuisine"),
+                                  (CYAN, 'fill', "Buanderie")])
 
             elif key == "plb_ec":
                 _draw_gt(c, gtx_p, gty_p, "EC", ROUGE)
@@ -1058,15 +1080,21 @@ def generer_plans_mep(output_path, resultats_mep=None, resultats_structure=None,
                     n = r.get('name','').lower()
                     if any(k in n for k in ['terrasse','balcon','jardin','piscine','vide','espace']): continue
                     rx, ry = tx(r['x']), ty(r['y'])
-                    c.setStrokeColor(JAUNE); c.setFillColor(colors.HexColor("#FFF8E1")); c.setLineWidth(0.4)
-                    c.circle(rx, ry+5, 2.5, fill=1, stroke=1)
-                    c.setStrokeColor(JAUNE); c.setLineWidth(0.3)
-                    c.line(rx-1.5, ry+5, rx+1.5, ry+5); c.line(rx, ry+3.5, rx, ry+6.5)
+                    # Luminaire — cercle avec croix (symbole standard)
+                    c.setStrokeColor(JAUNE); c.setFillColor(colors.HexColor("#FFF8E1")); c.setLineWidth(0.5)
+                    c.circle(rx, ry+5, 3.5, fill=1, stroke=1)
+                    c.setStrokeColor(JAUNE); c.setLineWidth(0.4)
+                    c.line(rx-2.5, ry+5, rx+2.5, ry+5); c.line(rx, ry+2.5, rx, ry+7.5)
+                    # Interrupteur — petit cercle avec trait
                     if any(k in n for k in ['chambre','salon','sejour','bureau','sam','bar','cuisine','sdb','wc','restaurant','magasin','salle']):
-                        c.setFillColor(colors.HexColor("#FFF9C4")); c.setStrokeColor(ORANGE); c.setLineWidth(0.3)
-                        c.circle(rx-7, ry+2, 1.5, fill=1, stroke=1)
-                notes = [f"P éclairage: {el.puissance_eclairage_kw:.1f} kW"]
-                _legend(c, w, h, [(JAUNE, 'circle', "Luminaire"), (colors.HexColor("#FFF9C4"), 'circle', "Interrupteur")])
+                        c.setFillColor(colors.HexColor("#FFF9C4")); c.setStrokeColor(ORANGE); c.setLineWidth(0.4)
+                        c.circle(rx-8, ry+2, 2, fill=1, stroke=1)
+                        c.setStrokeColor(ORANGE); c.setLineWidth(0.3)
+                        c.line(rx-8, ry+4, rx-6, ry+5)
+                notes = [f"Puissance éclairage: {el.puissance_eclairage_kw:.1f} kW",
+                         f"Puissance totale: {el.puissance_totale_kva:.0f} kVA"]
+                _legend(c, w, h, [(JAUNE, 'circle', "Luminaire plafonnier"),
+                                  (colors.HexColor("#FFF9C4"), 'circle', "Interrupteur simple allumage")])
 
             elif key == "elec_dist":
                 # TD dans la gaine technique
