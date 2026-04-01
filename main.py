@@ -414,7 +414,7 @@ async def parse_multi_start(
 
     status = converter_status()
 
-    if status["oda_available"]:
+    if status.get("tool"):
         # FAST PATH: ODA converts all DWG→DXF locally, then ezdxf reads them
         return await _parse_multi_fast(saved, nb_niveaux, ville or "Dakar", beton)
     else:
