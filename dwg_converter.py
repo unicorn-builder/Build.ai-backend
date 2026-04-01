@@ -18,20 +18,114 @@ import time
 
 logger = logging.getLogger("dwg_converter")
 
+# Path where we install/cache dwg2dxf
+_APP_BIN = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'bin')
+
 
 def _find_dwg2dxf():
     """Find LibreDWG dwg2dxf binary."""
     path = shutil.which('dwg2dxf')
     if path:
         return path
-    # Check app-local bin (Render installs here)
-    here = os.path.dirname(os.path.abspath(__file__))
-    for p in [os.path.join(here, 'bin', 'dwg2dxf'),
+    for p in [os.path.join(_APP_BIN, 'dwg2dxf'),
               '/opt/render/project/src/bin/dwg2dxf',
               '/usr/local/bin/dwg2dxf', '/usr/bin/dwg2dxf']:
         if os.path.isfile(p) and os.access(p, os.X_OK):
             return p
     return None
+
+
+def _ensure_dwg2dxf():
+    """
+    Ensure dwg2dxf is available. If not found, compile LibreDWG from source.
+    This runs ONCE at first DWG conversion. Takes ~3-5 minutes.
+    The binary is cached in ./bin/ and reused for all subsequent calls.
+
+    Requirements (verified on Render runtime):
+    - gcc, make, curl: available at /usr/bin/
+    - Writable filesystem: confirmed
+    """
+    global DWG2DXF_PATH
+    if DWG2DXF_PATH:
+        return DWG2DXF_PATH
+
+    # Check again (might have been compiled by another request)
+    found = _find_dwg2dxf()
+    if found:
+        DWG2DXF_PATH = found
+        return found
+
+    # Check if we have gcc (only compile on Linux servers, not dev machines)
+    if not shutil.which('gcc'):
+        logger.info("No gcc available — cannot compile dwg2dxf")
+        return None
+
+    logger.info("dwg2dxf not found — compiling LibreDWG from source (first time only)...")
+    try:
+        os.makedirs(_APP_BIN, exist_ok=True)
+        build_dir = tempfile.mkdtemp(prefix="libredwg_build_")
+        install_dir = os.path.join(build_dir, "install")
+
+        # Download
+        tarball = os.path.join(build_dir, "libredwg.tar.xz")
+        subprocess.run([
+            "curl", "-sL",
+            "https://github.com/LibreDWG/libredwg/releases/download/0.13.4/libredwg-0.13.4.tar.xz",
+            "-o", tarball
+        ], check=True, timeout=60)
+        logger.info("  Downloaded LibreDWG 0.13.4")
+
+        # Extract
+        subprocess.run(["tar", "xJf", tarball, "-C", build_dir], check=True, timeout=30)
+        src_dir = os.path.join(build_dir, "libredwg-0.13.4")
+        logger.info("  Extracted source")
+
+        # Configure
+        subprocess.run([
+            "./configure", f"--prefix={install_dir}",
+            "--disable-write", "--disable-shared", "-q"
+        ], cwd=src_dir, check=True, timeout=120,
+           capture_output=True)
+        logger.info("  Configured")
+
+        # Compile
+        nproc = os.cpu_count() or 1
+        subprocess.run(
+            ["make", f"-j{nproc}", "-s"],
+            cwd=src_dir, check=True, timeout=600,
+            capture_output=True)
+        logger.info("  Compiled")
+
+        # Install
+        subprocess.run(
+            ["make", "install", "-s"],
+            cwd=src_dir, check=True, timeout=60,
+            capture_output=True)
+
+        # Copy binary to app bin
+        src_bin = os.path.join(install_dir, "bin", "dwg2dxf")
+        dst_bin = os.path.join(_APP_BIN, "dwg2dxf")
+        if os.path.isfile(src_bin):
+            shutil.copy2(src_bin, dst_bin)
+            os.chmod(dst_bin, 0o755)
+            DWG2DXF_PATH = dst_bin
+            logger.info(f"  ✓ dwg2dxf compiled and installed at {dst_bin}")
+            return dst_bin
+        else:
+            logger.error("  Compilation produced no dwg2dxf binary")
+            return None
+
+    except subprocess.TimeoutExpired:
+        logger.error("  LibreDWG compilation timed out")
+        return None
+    except subprocess.CalledProcessError as e:
+        logger.error(f"  LibreDWG compilation failed: {e}")
+        return None
+    except Exception as e:
+        logger.error(f"  LibreDWG compilation error: {e}")
+        return None
+    finally:
+        shutil.rmtree(build_dir, ignore_errors=True)
 
 
 def _find_oda():
@@ -386,6 +480,9 @@ def convert_to_dxf(input_path: str, ville: str = "Dakar") -> str:
         return input_path  # already DXF
 
     if ext == '.dwg':
+        # Ensure dwg2dxf is available (compiles on first use if needed)
+        _ensure_dwg2dxf()
+
         # Try LibreDWG first (fastest, open source)
         if DWG2DXF_PATH:
             dxf = dwg_to_dxf_libredwg(input_path)
