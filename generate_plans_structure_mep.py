@@ -908,24 +908,25 @@ def generer_plans_mep(output_path, resultats_mep=None, resultats_structure=None,
     else:
         level_list = [("Niveau courant", None)]  # fallback grille
 
-    # Sub-lots: (title, lot_label, draw_fn_key)
+    # Sub-lots with grouping: sub-lots sharing lot_label are on SAME page
     sublots = [
-        ("PLOMBERIE — EAU FROIDE",     "PLB", "plb_ef"),
-        ("PLOMBERIE — EAU CHAUDE",     "PLB", "plb_ec"),
-        ("PLOMBERIE — ÉVACUATIONS",    "PLB", "plb_eu"),
-        ("ÉLECTRICITÉ — ÉCLAIRAGE",    "ELEC","elec_ecl"),
-        ("ÉLECTRICITÉ — PRISES & TGBT","ELEC","elec_dist"),
-        ("CVC — CLIMATISATION",        "CVC", "cvc_clim"),
-        ("CVC — VENTILATION VMC",      "CVC", "cvc_vmc"),
-        ("SÉCURITÉ INCENDIE — DÉTECTION", "SSI", "ssi_det"),
-        ("SÉCURITÉ INCENDIE — EXTINCTION","SSI", "ssi_ext"),
-        ("COURANTS FAIBLES",           "CFA", "cfa"),
-        ("ASCENSEURS",                 "ASC", "asc_plan"),
-        ("AUTOMATISATION — GTB",       "GTB", "gtb"),
+        ("PLOMBERIE — EF / EC / EU",                    "PLB",  "plb_ef"),
+        ("PLOMBERIE — EF / EC / EU",                    "PLB",  "plb_ec"),
+        ("PLOMBERIE — EF / EC / EU",                    "PLB",  "plb_eu"),
+        ("ÉLECTRICITÉ — Éclairage / Prises / TGBT",     "ELEC", "elec_ecl"),
+        ("ÉLECTRICITÉ — Éclairage / Prises / TGBT",     "ELEC", "elec_dist"),
+        ("CVC — Climatisation / VMC",                   "CVC",  "cvc_clim"),
+        ("CVC — Climatisation / VMC",                   "CVC",  "cvc_vmc"),
+        ("SÉCURITÉ INCENDIE — Détection / Extinction",  "SSI",  "ssi_det"),
+        ("SÉCURITÉ INCENDIE — Détection / Extinction",  "SSI",  "ssi_ext"),
+        ("COURANTS FAIBLES / ASCENSEURS / GTB",         "CFA",  "cfa"),
+        ("COURANTS FAIBLES / ASCENSEURS / GTB",         "CFA",  "asc_plan"),
+        ("COURANTS FAIBLES / ASCENSEURS / GTB",         "CFA",  "gtb"),
     ]
-
-    total_pages = len(sublots) * len(level_list)
+    unique_lots = list(dict.fromkeys(s[1] for s in sublots))
+    total_pages = len(unique_lots) * len(level_list)
     page = 0
+    _prev_page_id = None
 
     c = pdfcanvas.Canvas(output_path, pagesize=A3L)
     c.setTitle(f"Plans MEP — {p.get('nom','Projet')}")
@@ -933,6 +934,18 @@ def generer_plans_mep(output_path, resultats_mep=None, resultats_structure=None,
 
     for title, lot_label, key in sublots:
       for level_label, level_geom in level_list:
+        # Skip page setup if this sub-lot shares the page with the previous one
+        page_id = f"{lot_label}_{level_label}"
+        if page_id == _prev_page_id:
+            pass  # page already set up — just draw the MEP elements
+        else:
+            if _prev_page_id is not None:
+                # Close the previous page
+                _cartouche(c, w, h, p, _prev_title + " — " + _prev_level, page, total_pages)
+                c.showPage()
+            _prev_page_id = page_id
+            _prev_title = title
+            _prev_level = level_label
         page += 1
         w, h = A3L; c.setPageSize(A3L); _border(c, w, h)
         c.setFillColor(NOIR); c.setFont("Helvetica-Bold", 12)
@@ -1356,12 +1369,9 @@ def generer_plans_mep(output_path, resultats_mep=None, resultats_structure=None,
                 notes = [f"{aut.protocole} — {aut.nb_points_controle} pts"]
                 _legend(c, w, h, [(BLEU, 1.8, f"Bus {aut.protocole}"), (ORANGE, 'circle', "Capteur")])
 
-        # Notes en bas
-        c.setFont("Helvetica", 5); c.setFillColor(GRIS3)
-        for k_n, note in enumerate(notes[:3]):
-            c.drawString(14*mm, 42*mm - k_n*5*mm, note)
-
-        _cartouche(c, w, h, p, title, page, total_pages)
+    # Close the last page
+    if _prev_page_id is not None:
+        _cartouche(c, w, h, p, _prev_title + " — " + _prev_level, page, total_pages)
         c.showPage()
 
     c.save()
