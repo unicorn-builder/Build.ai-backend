@@ -1507,3 +1507,27 @@ async def download_f2d(urn: str, f2d_path: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 # manifest fix Sun Mar 29 01:38:44 GMT 2026
+
+
+@app.get("/debug/env")
+async def debug_env():
+    """Temporary: check what tools are available on Render."""
+    import subprocess, shutil
+    checks = {}
+    for tool in ['gcc', 'make', 'curl', 'apt-get', 'dwg2dxf', 'ODAFileConverter']:
+        checks[tool] = shutil.which(tool) or "NOT FOUND"
+    try:
+        r = subprocess.run(['uname', '-a'], capture_output=True, text=True, timeout=5)
+        checks['uname'] = r.stdout.strip()
+    except:
+        checks['uname'] = 'error'
+    try:
+        r = subprocess.run(['python3', '--version'], capture_output=True, text=True, timeout=5)
+        checks['python'] = r.stdout.strip()
+    except:
+        checks['python'] = 'error'
+    # Check if we can write to ./bin/
+    import os
+    checks['cwd'] = os.getcwd()
+    checks['can_write_bin'] = os.access('.', os.W_OK)
+    return checks
