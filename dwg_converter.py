@@ -142,31 +142,83 @@ def dwg_to_dxf_oda(dwg_path: str) -> str:
 
 def dwg_to_dxf_aps(dwg_path: str, ville: str = "Dakar") -> str:
     """
-    Convert DWG → DXF via APS (fallback when ODA not available).
-    Uploads to APS, requests SVF2 translation, extracts properties,
-    returns a synthetic DXF built from the extracted geometry.
-
-    This is slower (~2min) but works without ODA installed.
-    Returns path to generated DXF, or None.
+    Convert DWG → DXF via APS Model Derivative.
+    Uploads DWG, requests DXF output format, downloads the real DXF.
+    ~2 min per file. Returns path to downloaded DXF, or None.
     """
     try:
-        from aps_parser_v2 import parser_dwg_aps
-        result = parser_dwg_aps(dwg_path, ville=ville)
-        if not result.get("ok") or not result.get("urn"):
+        from aps_parser_v2 import (get_token, ensure_bucket, upload_file,
+                                    wait_for_translation, auth_headers, APS_MD_URL)
+        import requests
+
+        token = get_token()
+        ensure_bucket(token)
+
+        # Upload
+        timestamp = int(time.time())
+        filename = os.path.basename(dwg_path).replace(" ", "_")
+        object_key = f"tijan_{timestamp}_{filename}"
+        urn = upload_file(dwg_path, object_key, token)
+        logger.info(f"APS DXF conversion: uploaded {filename}, urn={urn[:20]}...")
+
+        # Request DXF translation (not SVF2)
+        token = get_token()
+        r = requests.post(
+            f"{APS_MD_URL}/job",
+            headers={**auth_headers(token), "Content-Type": "application/json"},
+            json={
+                "input": {"urn": urn},
+                "output": {"formats": [{"type": "dxf"}]},
+            },
+            timeout=30,
+        )
+        r.raise_for_status()
+        logger.info(f"APS DXF translation started")
+
+        # Wait for translation
+        token = get_token()
+        manifest = wait_for_translation(urn, token, timeout_s=300)
+
+        # Find the DXF derivative in the manifest
+        token = get_token()
+        dxf_url = None
+        for deriv in manifest.get("derivatives", []):
+            for child in deriv.get("children", []):
+                if child.get("type") == "resource" and child.get("urn", "").endswith(".dxf"):
+                    dxf_url = child["urn"]
+                    break
+                # Also check in nested children
+                for grandchild in child.get("children", []):
+                    if grandchild.get("type") == "resource" and grandchild.get("urn", "").endswith(".dxf"):
+                        dxf_url = grandchild["urn"]
+                        break
+
+        if not dxf_url:
+            logger.warning("APS produced no DXF derivative")
             return None
 
-        # We can't get a real DXF from APS free tier easily
-        # But we CAN extract geometry via properties and write a DXF with ezdxf
-        from main import _load_project_geometry
-        geom = _load_project_geometry(result["urn"])
-        if not geom or len(geom.get('walls', [])) < 5:
+        # Download the DXF
+        import urllib.parse
+        encoded_derivative = urllib.parse.quote(dxf_url, safe='')
+        dl_url = f"{APS_MD_URL}/{urn}/manifest/{encoded_derivative}"
+        r = requests.get(dl_url, headers=auth_headers(token), timeout=60)
+        if r.status_code != 200:
+            logger.warning(f"DXF download failed: {r.status_code}")
             return None
 
-        # Write geometry to DXF using ezdxf
-        return _write_geometry_to_dxf(geom)
+        output = tempfile.mktemp(suffix='.dxf', prefix='tijan_aps_')
+        with open(output, 'wb') as f:
+            f.write(r.content)
+
+        if os.path.getsize(output) > 100:
+            logger.info(f"APS DXF downloaded: {os.path.getsize(output)/1024:.0f}KB")
+            return output
+
+        os.unlink(output)
+        return None
 
     except Exception as e:
-        logger.warning(f"APS fallback error: {e}")
+        logger.warning(f"APS DXF conversion error: {e}")
         return None
 
 
@@ -210,13 +262,87 @@ def _write_geometry_to_dxf(geometry: dict) -> str:
     return path
 
 
+def pdf_to_geometry(pdf_path: str) -> dict:
+    """
+    Extract vector geometry from a PDF (plans exported from AutoCAD/Revit).
+    Uses pymupdf get_drawings() to extract lines, curves with real XY coords.
+    Returns geometry dict compatible with plan generators, or None.
+    """
+    try:
+        import fitz
+    except ImportError:
+        logger.warning("pymupdf not installed — cannot extract PDF geometry")
+        return None
+
+    try:
+        doc = fitz.open(pdf_path)
+        if len(doc) == 0:
+            return None
+
+        geometry = {'walls': [], 'windows': [], 'doors': [], 'rooms': []}
+
+        # Process each page (typically 1 page per level)
+        for page_idx in range(min(len(doc), 5)):  # max 5 pages
+            page = doc[page_idx]
+            drawings = page.get_drawings()
+
+            for drawing in drawings:
+                color = drawing.get("color", (0, 0, 0))
+                width = drawing.get("width", 0)
+                items = drawing.get("items", [])
+
+                for item in items:
+                    if item[0] == "l":  # line
+                        p1, p2 = item[1], item[2]
+                        # Scale: PDF coords are in points (72 dpi)
+                        # Convert to mm (typical CAD units)
+                        scale = 25.4 / 72  # points to mm... but PDF from CAD
+                        # may already be in real-world coords
+                        line = {
+                            'type': 'line',
+                            'start': [round(p1.x, 1), round(p1.y, 1)],
+                            'end': [round(p2.x, 1), round(p2.y, 1)]
+                        }
+                        # Thick lines = walls, thin = other
+                        if width >= 0.5:
+                            geometry['walls'].append(line)
+                        elif width >= 0.2:
+                            geometry['windows'].append(line)
+
+            # Extract text annotations (room labels)
+            blocks = page.get_text("dict")["blocks"]
+            for block in blocks:
+                for line in block.get("lines", []):
+                    for span in line.get("spans", []):
+                        text = span.get("text", "").strip()
+                        if text and 3 <= len(text) <= 30:
+                            bbox = span.get("bbox", (0, 0, 0, 0))
+                            geometry['rooms'].append({
+                                'name': text,
+                                'x': round((bbox[0] + bbox[2]) / 2, 1),
+                                'y': round((bbox[1] + bbox[3]) / 2, 1)
+                            })
+
+        doc.close()
+
+        wall_count = len(geometry['walls'])
+        logger.info(f"PDF geometry: {wall_count} walls, {len(geometry['rooms'])} rooms")
+
+        return geometry if wall_count > 10 else None
+
+    except Exception as e:
+        logger.warning(f"PDF geometry extraction error: {e}")
+        return None
+
+
 def convert_to_dxf(input_path: str, ville: str = "Dakar") -> str:
     """
     Convert any supported input to DXF.
     Returns path to DXF file, or None.
 
     DXF → returns input_path as-is (already DXF)
-    DWG → ODA (fast) or APS (slow fallback)
+    DWG → LibreDWG/ODA (fast) or APS DXF output (slow)
+    PDF → extract vector geometry → write DXF
     """
     ext = os.path.splitext(input_path)[1].lower()
 
@@ -246,6 +372,17 @@ def convert_to_dxf(input_path: str, ville: str = "Dakar") -> str:
             return dxf
 
         logger.warning("DWG→DXF conversion failed")
+        return None
+
+    if ext == '.pdf':
+        # PDF vectoriel → extract geometry → write DXF
+        geom = pdf_to_geometry(input_path)
+        if geom:
+            dxf = _write_geometry_to_dxf(geom)
+            if dxf:
+                logger.info(f"PDF→DXF: {dxf}")
+                return dxf
+        logger.warning("PDF→DXF: no vector geometry found")
         return None
 
     logger.warning(f"Unsupported format for DXF conversion: {ext}")
