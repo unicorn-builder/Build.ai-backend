@@ -11,10 +11,9 @@ pypdf==4.1.0
 
 # Parsing géométrie
 ezdxf>=1.1.0
-ifcopenshell>=0.7.0
 
 # PDF vectoriel (extraction texte + cotes)
-pymupdf==1.23.26
+pymupdf>=1.23.0
 
 # IA (parsing plans scannés si besoin futur)
 anthropic>=0.20.0
