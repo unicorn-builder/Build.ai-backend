@@ -820,7 +820,7 @@ def _calculer_fondations(d: DonneesProjet, poteaux: List[ResultatPoteau],
 # ANALYSE SISMIQUE EC8
 # ══════════════════════════════════════════════════════════════
 
-def _calculer_sismique(d: DonneesProjet, zone: int, shon: float) -> ResultatSismique:
+def _calculer_sismique(d: DonneesProjet, zone: int, shon: float, charge_G: float = 6.5) -> ResultatSismique:
     """Analyse sismique simplifiée EC8 §4.3.3."""
     # Paramètres sismiques par zone
     ag_values = {0: 0.0, 1: 0.07, 2: 0.11, 3: 0.16, 4: 0.22}
@@ -847,9 +847,8 @@ def _calculer_sismique(d: DonneesProjet, zone: int, shon: float) -> ResultatSism
     else:
         Sd = ag * S * 2.5 / q * TC * TD / T1**2
 
-    # BUG7 FIX: Use actual charge_G from project data instead of hardcoded 6.5
-    # charge_G_kNm2 is available from donnees; use it for more accurate seismic mass
-    masse_totale = shon * d.charge_G_kNm2 / 9.81 * 1000  # kg (converting from kN/m²)
+    # BUG7 FIX: Use actual charge_G passed from calculer_structure instead of hardcoded 6.5
+    masse_totale = shon * charge_G / 9.81 * 1000  # kg (converting from kN/m²)
     # Force sismique de base
     Fb_kN = Sd * masse_totale / 1000 * 0.85
 
@@ -1154,7 +1153,7 @@ def calculer_structure(d: DonneesProjet) -> ResultatsStructure:
     cloisons  = _calculer_cloisons(d, prix_struct)
     fondation = _calculer_fondations(d, poteaux, fck, prix_struct)
     shon_val  = _shon(d)
-    sismique  = _calculer_sismique(d, zone, shon_val)
+    sismique  = _calculer_sismique(d, zone, shon_val, charge_G=G)
     boq       = _calculer_boq(d, poteaux, poutre_p, dalle, fondation, cloisons, prix_struct)
     analyse   = _analyser(d, poteaux, poutre_p, dalle, fondation, boq, classe_beton, classe_acier)
 
