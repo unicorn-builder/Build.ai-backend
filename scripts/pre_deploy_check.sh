@@ -20,13 +20,19 @@ echo "✓ Local tests passed"
 echo ""
 
 # 2. Live endpoint tests (requires backend to be running)
-echo "▶ [2/3] Running live endpoint tests..."
+echo "▶ [2/4] Running live endpoint tests..."
 python -m pytest tests/test_endpoints.py -v --tb=short
 echo "✓ Endpoint tests passed"
 echo ""
 
-# 3. CORS tests
-echo "▶ [3/3] Running CORS tests..."
+# 3. End-to-end integration tests
+echo "▶ [3/4] Running e2e integration tests..."
+python -m pytest tests/test_e2e.py -v --tb=short
+echo "✓ E2E tests passed"
+echo ""
+
+# 4. CORS tests
+echo "▶ [4/4] Running CORS tests..."
 python -m pytest tests/test_cors.py -v --tb=short
 echo "✓ CORS tests passed"
 echo ""
