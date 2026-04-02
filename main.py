@@ -879,6 +879,60 @@ async def calculate(params: ParamsProjet):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+def _serialize_mep(rm, ville: str = None) -> dict:
+    """Serialize ResultatsMEP to the JSON format expected by the frontend."""
+    e = rm.edge
+    return {
+        "ok": True,
+        "surf_batie_m2": rm.surf_batie_m2,
+        "nb_logements": rm.nb_logements,
+        "nb_personnes": rm.nb_personnes,
+        "electrique": dataclasses.asdict(rm.electrique),
+        "plomberie": dataclasses.asdict(rm.plomberie),
+        "cvc": dataclasses.asdict(rm.cvc),
+        "courants_faibles": dataclasses.asdict(rm.courants_faibles),
+        "securite_incendie": dataclasses.asdict(rm.securite_incendie),
+        "ascenseurs": dataclasses.asdict(rm.ascenseurs),
+        "automatisation": dataclasses.asdict(rm.automatisation),
+        "edge": {
+            "economie_energie_pct": e.economie_energie_pct,
+            "economie_eau_pct": e.economie_eau_pct,
+            "economie_materiaux_pct": e.economie_materiaux_pct,
+            "certifiable": e.certifiable,
+            "niveau_certification": e.niveau_certification,
+            "mesures_energie": e.mesures_energie,
+            "mesures_eau": e.mesures_eau,
+            "mesures_materiaux": e.mesures_materiaux,
+            "plan_action": e.plan_action,
+            "cout_mise_conformite_fcfa": e.cout_mise_conformite_fcfa,
+            "roi_ans": e.roi_ans,
+            "methode_calcul": e.methode_calcul,
+            "note_generale": e.note_generale,
+        },
+        "boq_mep": {
+            "basic_fcfa": rm.boq.total_basic_fcfa,
+            "hend_fcfa": rm.boq.total_hend_fcfa,
+            "luxury_fcfa": rm.boq.total_luxury_fcfa,
+            "ratio_basic_m2": rm.boq.ratio_basic_m2,
+            "ratio_hend_m2": rm.boq.ratio_hend_m2,
+            "recommandation": rm.boq.recommandation,
+            "note_choix": rm.boq.note_choix,
+            "lots": [
+                {
+                    "lot": l.lot,
+                    "designation": l.designation,
+                    "basic_fcfa": l.pu_basic_fcfa,
+                    "hend_fcfa": l.pu_hend_fcfa,
+                    "luxury_fcfa": l.pu_luxury_fcfa,
+                    "note": l.note_impact,
+                }
+                for l in rm.boq.lots
+            ],
+        },
+        "devise_info": get_devise_info(ville) if ville else None,
+    }
+
+
 @app.post("/calculate-mep")
 async def calculate_mep_endpoint(params: ParamsProjet):
     """Calcul MEP complet — retourne tous les résultats."""
@@ -890,57 +944,9 @@ async def calculate_mep_endpoint(params: ParamsProjet):
         rm = calculer_mep(donnees, rs)
         gc.collect()
 
-        e = rm.edge
-        return {
-            "ok": True,
-            "projet": params.nom,
-            "surf_batie_m2": rm.surf_batie_m2,
-            "nb_logements": rm.nb_logements,
-            "nb_personnes": rm.nb_personnes,
-            "electrique": dataclasses.asdict(rm.electrique),
-            "plomberie": dataclasses.asdict(rm.plomberie),
-            "cvc": dataclasses.asdict(rm.cvc),
-            "courants_faibles": dataclasses.asdict(rm.courants_faibles),
-            "securite_incendie": dataclasses.asdict(rm.securite_incendie),
-            "ascenseurs": dataclasses.asdict(rm.ascenseurs),
-            "automatisation": dataclasses.asdict(rm.automatisation),
-            "edge": {
-                "economie_energie_pct": e.economie_energie_pct,
-                "economie_eau_pct": e.economie_eau_pct,
-                "economie_materiaux_pct": e.economie_materiaux_pct,
-                "certifiable": e.certifiable,
-                "niveau_certification": e.niveau_certification,
-                "mesures_energie": e.mesures_energie,
-                "mesures_eau": e.mesures_eau,
-                "mesures_materiaux": e.mesures_materiaux,
-                "plan_action": e.plan_action,
-                "cout_mise_conformite_fcfa": e.cout_mise_conformite_fcfa,
-                "roi_ans": e.roi_ans,
-                "methode_calcul": e.methode_calcul,
-                "note_generale": e.note_generale,
-            },
-            "boq_mep": {
-                "basic_fcfa": rm.boq.total_basic_fcfa,
-                "hend_fcfa": rm.boq.total_hend_fcfa,
-                "luxury_fcfa": rm.boq.total_luxury_fcfa,
-                "ratio_basic_m2": rm.boq.ratio_basic_m2,
-                "ratio_hend_m2": rm.boq.ratio_hend_m2,
-                "recommandation": rm.boq.recommandation,
-                "note_choix": rm.boq.note_choix,
-                "lots": [
-                    {
-                        "lot": l.lot,
-                        "designation": l.designation,
-                        "basic_fcfa": l.pu_basic_fcfa,
-                        "hend_fcfa": l.pu_hend_fcfa,
-                        "luxury_fcfa": l.pu_luxury_fcfa,
-                        "note": l.note_impact,
-                    }
-                    for l in rm.boq.lots
-                ],
-            },
-            "devise_info": get_devise_info(params.ville),
-        }
+        result = _serialize_mep(rm, params.ville)
+        result["projet"] = params.nom
+        return result
     except Exception as e:
         logger.error(f"/calculate-mep error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -1558,7 +1564,7 @@ async def chat_projet(request: Request):
 
                 rs_dict = _ser(rs)
                 rs_dict['ok'] = True
-                rm_dict = _ser(rm)
+                rm_dict = _serialize_mep(rm, updated_params.get('ville'))
 
                 gc.collect()
                 return {
