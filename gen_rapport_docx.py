@@ -130,6 +130,49 @@ def generer_rapport_executif_docx(rs, rm, params: dict) -> bytes:
     ]
     _styled_table(doc, ['Pilier', 'Score', 'Seuil', 'Statut'], edge_data, col_widths=[5, 3, 3, 5])
 
+    # Section 4 — Analysis/Insights
+    doc.add_heading('4. SYNTHÈSE TECHNIQUE ET RECOMMANDATIONS', level=1)
+
+    # Points forts
+    if rs.analyse.points_forts:
+        doc.add_heading('Atouts du projet', level=2)
+        for point in rs.analyse.points_forts:
+            p = doc.add_paragraph(point, style='List Bullet')
+            p.paragraph_format.space_before = Pt(3)
+            p.paragraph_format.space_after = Pt(3)
+
+    # Alertes
+    if rs.analyse.alertes:
+        doc.add_heading('Points à surveiller', level=2)
+        for alerte in rs.analyse.alertes:
+            p = doc.add_paragraph(alerte, style='List Bullet')
+            p.paragraph_format.space_before = Pt(3)
+            p.paragraph_format.space_after = Pt(3)
+            for run in p.runs:
+                run.font.color.rgb = RGBColor(0xFF, 0x99, 0x00)
+
+    # Recommandations
+    if rs.analyse.recommandations:
+        doc.add_heading('Recommandations', level=2)
+        for rec in rs.analyse.recommandations[:5]:
+            p = doc.add_paragraph(rec, style='List Bullet')
+            p.paragraph_format.space_before = Pt(3)
+            p.paragraph_format.space_after = Pt(3)
+
+    # Disclaimer
+    doc.add_paragraph()
+    disclaimer = doc.add_paragraph(
+        'Ce rapport est un document de pré-étude indicatif (±15%). '
+        'Il ne remplace pas les études techniques d\'un bureau d\'études agréé, '
+        'dont l\'intervention est légalement obligatoire avant tout démarrage des travaux.'
+    )
+    disclaimer.paragraph_format.left_indent = Cm(0.5)
+    disclaimer.paragraph_format.right_indent = Cm(0.5)
+    for run in disclaimer.runs:
+        run.font.size = Pt(8)
+        run.font.italic = True
+        run.font.color.rgb = GRIS
+
     # Footer
     doc.add_paragraph('\n\nDocument généré par Tijan AI — tijan.ai').italic = True
 
