@@ -303,6 +303,32 @@ async def health():
     }
 
 
+@app.get("/version")
+async def version():
+    """Returns git commit hash + build timestamp so we know exactly what is deployed."""
+    import subprocess
+    try:
+        commit = subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"],
+            stderr=subprocess.DEVNULL, timeout=5
+        ).decode().strip()
+    except Exception:
+        commit = os.environ.get("RENDER_GIT_COMMIT", "unknown")[:7]
+    try:
+        commit_time = subprocess.check_output(
+            ["git", "log", "-1", "--format=%cI"],
+            stderr=subprocess.DEVNULL, timeout=5
+        ).decode().strip()
+    except Exception:
+        commit_time = "unknown"
+    return {
+        "commit": commit,
+        "commit_time": commit_time,
+        "version": "6.1.0",
+        "deployed_at": datetime.utcnow().isoformat(),
+    }
+
+
 @app.post("/parse")
 async def parse_fichier(
     file: UploadFile = File(...),

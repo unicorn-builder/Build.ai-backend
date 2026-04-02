@@ -1,5 +1,6 @@
-# Tijan AI — Backend v4
+# Tijan AI — Backend v6.1
 # Render Standard (1 CPU / 2GB RAM)
+# All versions pinned — do NOT change without running: pytest tests/
 
 fastapi==0.110.0
 uvicorn[standard]==0.27.1
@@ -10,16 +11,19 @@ reportlab==4.1.0
 pypdf==4.1.0
 
 # Parsing géométrie
-ezdxf>=1.1.0
+ezdxf==1.4.2
 
 # PDF vectoriel (extraction texte + cotes)
-pymupdf>=1.23.0
+pymupdf==1.25.3
 
 # IA (parsing plans scannés si besoin futur)
-anthropic>=0.20.0
+anthropic==0.49.0
 
 # Utilitaires
 python-multipart==0.0.9
-requests>=2.31.0
-httpx
-openai
+requests==2.31.0
+httpx==0.27.0
+openai==1.66.5
+
+# Testing (dev only — not needed on Render)
+# pytest>=8.0
