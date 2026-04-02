@@ -1138,10 +1138,10 @@ async def generate_note_docx(params: ParamsProjet):
     """Note de calcul structure as Word (.docx)."""
     try:
         _, _, calculer_structure = get_moteur_structure()
-        from gen_note_docx import generer_note_structure_docx
+        from gen_note_docx import generer as generer_note_docx
         donnees = params_to_donnees(params)
         rs = calculer_structure(donnees)
-        docx_bytes = generer_note_structure_docx(rs, params.dict())
+        docx_bytes = generer_note_docx(donnees, rs)
         gc.collect()
         docx_name = f"tijan_note_structure_{params.nom.replace(' ','_')[:20]}.docx"
         return StreamingResponse(
