@@ -559,42 +559,33 @@ def _draw_thick_wall(c, x1, y1, x2, y2, thickness):
 
 def _draw_coffrage_annotations(c, tx, ty, axes_x, axes_y, pot_s, pp_b, pp_h,
                                 ps_b, ps_h, dalle_ep, px_m, py_m, beton, acier):
-    """Draw structural coffrage annotations on top of a PDF background.
+    """Draw lightweight structural annotations on top of a PDF background.
 
-    Only draws lightweight overlay: axis lines, axis labels, column markers,
-    beam indicators, slab labels. Does NOT redraw walls/windows/doors.
+    The PDF already shows the building plan — we only add:
+    - Axis labels (numbered/lettered circles) OUTSIDE the plan
+    - Dimension labels between axes
+    - A small info box with beam/slab specs
+    NO grid lines, NO column markers, NO beams, NO hatching on the plan itself.
     """
     if not axes_x or not axes_y:
         return
 
-    # ── Axis lines — thin dashed, semi-transparent ──
-    c.saveState()
-    c.setStrokeAlpha(0.5)
-    c.setStrokeColor(colors.HexColor("#CC3333")); c.setLineWidth(0.4); c.setDash(8, 4)
-    y_lo = ty(axes_y[-1]) - 10*mm  # lowest point (Y flipped)
-    y_hi = ty(axes_y[0]) + 10*mm   # highest point
+    # Compute axis boundary positions
+    y_lo = min(ty(axes_y[0]), ty(axes_y[-1])) - 10*mm
+    y_hi = max(ty(axes_y[0]), ty(axes_y[-1])) + 10*mm
     x_lo = tx(axes_x[0]) - 10*mm
     x_hi = tx(axes_x[-1]) + 10*mm
-    for ax in axes_x:
-        c.line(tx(ax), y_lo, tx(ax), y_hi)
-    for ay in axes_y:
-        c.line(x_lo, ty(ay), x_hi, ty(ay))
-    c.setDash()
-    c.restoreState()
 
-    # ── Axis labels — numbered/lettered circles ──
+    # ── Axis labels — numbered/lettered circles OUTSIDE the plan only ──
     for i, ax in enumerate(axes_x):
         _axis_label(c, tx(ax), y_lo - 5*mm, str(i + 1))
-        _axis_label(c, tx(ax), y_hi + 5*mm, str(i + 1))
     for j, ay in enumerate(axes_y):
         _axis_label(c, x_lo - 5*mm, ty(ay), chr(65 + (j % 26)))
-        _axis_label(c, x_hi + 5*mm, ty(ay), chr(65 + (j % 26)))
 
-    # ── Dimension labels between axes — use actual axis spacing when in mm ──
+    # ── Dimension labels between axes ──
     c.setFillColor(GRIS2); c.setFont("Helvetica", 6)
     for i in range(len(axes_x) - 1):
         real_span = abs(axes_x[i+1] - axes_x[i])
-        # If coords are in mm (> 500), convert to m; otherwise use project param
         span_m = real_span / 1000.0 if real_span > 500 else px_m
         mid_x = (tx(axes_x[i]) + tx(axes_x[i+1])) / 2
         c.drawCentredString(mid_x, y_lo - 12*mm, f"{span_m:.2f}m")
@@ -607,79 +598,16 @@ def _draw_coffrage_annotations(c, tx, ty, axes_x, axes_y, pot_s, pp_b, pp_h,
         c.drawCentredString(0, 0, f"{span_m:.2f}m")
         c.restoreState()
 
-    # ── Poteaux (columns) — red-outlined squares at intersections ──
-    pt_d = 10  # scaled column marker — visible on A3
-    for ax in axes_x:
-        for ay in axes_y:
-            px, py = tx(ax), ty(ay)
-            c.setFillColor(colors.HexColor("#FFCCCC"))  # light red fill
-            c.setStrokeColor(ROUGE); c.setLineWidth(0.8)
-            c.rect(px - pt_d/2, py - pt_d/2, pt_d, pt_d, fill=1, stroke=1)
-            # Column section label
-            c.setFillColor(ROUGE); c.setFont("Helvetica-Bold", 4)
-            c.drawCentredString(px, py - 1.5, f"{pot_s}")
-
-    # ── Poutres principales (main beams) — semi-transparent thick lines ──
-    c.saveState()
-    c.setStrokeAlpha(0.4)
-    c.setStrokeColor(NOIR); c.setLineWidth(2.5)
-    for ay in axes_y:
-        py = ty(ay)
-        for i in range(len(axes_x) - 1):
-            c.line(tx(axes_x[i]), py, tx(axes_x[i+1]), py)
-    c.restoreState()
-    # Label PP on first span
-    if len(axes_x) >= 2 and len(axes_y) >= 1:
-        c.setFillColor(ROUGE); c.setFont("Helvetica-Bold", 5.5)
-        mid_x = (tx(axes_x[0]) + tx(axes_x[1])) / 2
-        c.drawCentredString(mid_x, ty(axes_y[0]) + 7, f"PP {pp_b}×{pp_h}")
-
-    # ── Poutres secondaires — thinner semi-transparent ──
-    c.saveState()
-    c.setStrokeAlpha(0.3)
-    c.setStrokeColor(GRIS3); c.setLineWidth(1.2)
-    for ax in axes_x:
-        px = tx(ax)
-        for j in range(len(axes_y) - 1):
-            c.line(px, ty(axes_y[j]), px, ty(axes_y[j+1]))
-    c.restoreState()
-
-    # ── Dalle labels — section in large panels ──
-    c.setFont("Helvetica", 5); c.setFillColor(GRIS2)
-    for i in range(len(axes_x) - 1):
-        for j in range(len(axes_y) - 1):
-            cx = (tx(axes_x[i]) + tx(axes_x[i+1])) / 2
-            cy = (ty(axes_y[j]) + ty(axes_y[j+1])) / 2
-            sw = abs(tx(axes_x[i+1]) - tx(axes_x[i]))
-            sh = abs(ty(axes_y[j+1]) - ty(axes_y[j]))
-            if sw > 20 and sh > 20:
-                # Compute actual panel dimensions
-                real_dx = abs(axes_x[i+1] - axes_x[i])
-                real_dy = abs(axes_y[j+1] - axes_y[j])
-                pdx_m = real_dx / 1000.0 if real_dx > 500 else px_m
-                pdy_m = real_dy / 1000.0 if real_dy > 500 else py_m
-                c.drawCentredString(cx, cy + 4, f"Dalle ep.{dalle_ep}")
-                c.setFont("Helvetica", 4)
-                c.drawCentredString(cx, cy - 5, f"{pdx_m:.1f}×{pdy_m:.1f}m")
-                c.setFont("Helvetica", 5)
-
-    # ── Light diagonal hatch for slab panels ──
-    c.saveState()
-    c.setStrokeAlpha(0.12)
-    c.setStrokeColor(GRIS4); c.setLineWidth(0.15)
-    for i in range(len(axes_x) - 1):
-        for j in range(len(axes_y) - 1):
-            x1p = tx(axes_x[i]) + 3; x2p = tx(axes_x[i+1]) - 3
-            y1p_d = min(ty(axes_y[j]), ty(axes_y[j+1])) + 3
-            y2p_d = max(ty(axes_y[j]), ty(axes_y[j+1])) - 3
-            sw = x2p - x1p; sh = y2p_d - y1p_d
-            if sw > 10 and sh > 10:
-                step = max(10, int(sw / 6))
-                for k in range(0, int(sw + sh), step):
-                    lx1 = x1p + min(k, sw); ly1 = y1p_d + max(0, k - sw)
-                    lx2 = x1p + max(0, k - sh); ly2 = y1p_d + min(k, sh)
-                    c.line(lx1, ly1, lx2, ly2)
-    c.restoreState()
+    # ── Compact spec box (bottom-left, outside the plan) ──
+    box_x = x_lo - 5*mm
+    box_y = y_lo - 28*mm
+    c.setFillColor(colors.HexColor("#F5F5F5")); c.setStrokeColor(GRIS3); c.setLineWidth(0.3)
+    c.rect(box_x, box_y, 60*mm, 14*mm, fill=1, stroke=1)
+    c.setFillColor(NOIR); c.setFont("Helvetica-Bold", 5)
+    c.drawString(box_x + 2*mm, box_y + 10*mm, f"Poteaux {pot_s}  |  PP {pp_b}×{pp_h}  |  PS {ps_b}×{ps_h}")
+    c.setFont("Helvetica", 4.5)
+    c.drawString(box_x + 2*mm, box_y + 5*mm, f"Dalle ep.{dalle_ep}  |  {beton}  |  {acier}")
+    c.drawString(box_x + 2*mm, box_y + 1*mm, f"Portées: {px_m:.2f} × {py_m:.2f}m")
 
 
 def _draw_mep_annotations(c, tx, ty, axes_x, axes_y, rooms, key, sublot_data,
