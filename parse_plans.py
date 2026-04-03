@@ -53,6 +53,8 @@ def _parse_pdf(path, client):
             try:
                 p=_claude_text(texte,client)
                 p=_defaults(p); p["ok"]=True; p["source"]="pdf_vectoriel"
+                # Extract geometry for plan generation
+                p["dwg_geometry"] = _extract_pdf_geometry(path)
                 return p
             except Exception as e:
                 return {"ok":False,"message":f"Claude PDF: {e}"}
@@ -71,11 +73,26 @@ def _parse_pdf(path, client):
             img_b64=base64.standard_b64encode(img_bytes).decode()
             p=_claude_vision(img_b64,client)
             p=_defaults(p); p["ok"]=True; p["source"]="pdf_scanne_vision"
+            # Extract geometry for plan generation
+            p["dwg_geometry"] = _extract_pdf_geometry(path)
             return p
         except Exception as e:
             return {"ok":False,"message":f"PDF scanne: {e}"}
     finally:
         doc.close()
+
+
+def _extract_pdf_geometry(path):
+    """Try to extract vector geometry from PDF for plan background."""
+    try:
+        from extract_pdf_geometry import extract_geometry_from_pdf
+        geom = extract_geometry_from_pdf(path, max_pages=5)
+        if geom:
+            logger.info(f"PDF geometry extracted successfully")
+        return geom
+    except Exception as e:
+        logger.warning(f"PDF geometry extraction failed: {e}")
+        return None
 
 def _extract_ezdxf(doc, client, label):
     msp=doc.modelspace()

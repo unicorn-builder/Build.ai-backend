@@ -440,14 +440,71 @@ def _legend(c, w, h, items):
 
 
 # ══════════════════════════════════════════
+# PDF RASTER BACKGROUND — archi PDF as greyed-out background image
+# ══════════════════════════════════════════
+
+def _render_pdf_background(c, archi_pdf_path, page_idx, w, h,
+                            ml=50*mm, mb=55*mm, mr=72*mm, mt=30*mm,
+                            opacity=0.18):
+    """Render a page from the architectural PDF as a light background image.
+
+    Uses PyMuPDF to rasterize the page, then places it on the ReportLab canvas.
+    The image is rendered at low opacity so structural/MEP overlays remain readable.
+    """
+    try:
+        import fitz
+        from reportlab.lib.utils import ImageReader
+        import io as _io
+
+        doc = fitz.open(archi_pdf_path)
+        if page_idx >= len(doc):
+            doc.close()
+            return False
+
+        page = doc[page_idx]
+        # Render at 150 DPI for decent quality without huge file size
+        mat = fitz.Matrix(150/72, 150/72)
+        pix = page.get_pixmap(matrix=mat, alpha=False)
+        img_bytes = pix.tobytes("png")
+        doc.close()
+
+        # Calculate placement — fit within drawing area with margins
+        aw = w - ml - mr
+        ah = h - mb - mt
+        img_w = pix.width
+        img_h = pix.height
+        scale = min(aw / img_w, ah / img_h)
+        draw_w = img_w * scale
+        draw_h = img_h * scale
+        ox = ml + (aw - draw_w) / 2
+        oy = mb + (ah - draw_h) / 2
+
+        # Draw with low opacity
+        c.saveState()
+        c.setFillAlpha(opacity)
+        c.setStrokeAlpha(opacity)
+        img_reader = ImageReader(_io.BytesIO(img_bytes))
+        c.drawImage(img_reader, ox, oy, draw_w, draw_h,
+                    preserveAspectRatio=True, anchor='c')
+        c.restoreState()
+        return True
+
+    except Exception as e:
+        import logging
+        logging.getLogger("tijan").warning(f"PDF background render failed: {e}")
+        return False
+
+
+# ══════════════════════════════════════════
 # PLANS STRUCTURE — même pattern que v4
 # ══════════════════════════════════════════
 
-def generer_plans_structure(output_path, resultats=None, params=None, dwg_geometry=None, **kw):
+def generer_plans_structure(output_path, resultats=None, params=None, dwg_geometry=None, archi_pdf_path=None, **kw):
     """
-    Plans structure. Deux modes :
-    - Avec dwg_geometry : fond de plan DWG réel + structure superposée
-    - Sans : grille paramétrique depuis ParamsProjet
+    Plans structure. Trois modes (par ordre de priorité) :
+    1. Avec dwg_geometry : fond de plan DWG/PDF réel + structure superposée
+    2. Avec archi_pdf_path : PDF archi en fond grisé + grille structure superposée
+    3. Sans : grille paramétrique seule depuis ParamsProjet
     Toutes les valeurs viennent de ResultatsStructure.
     """
     if resultats is None:
@@ -636,6 +693,12 @@ def generer_plans_structure(output_path, resultats=None, params=None, dwg_geomet
                 use_dwg = False
 
         if not use_dwg:
+            # Try PDF raster background if archi PDF available
+            if archi_pdf_path:
+                # Use page index matching level (0=RDC or first, 1=R+1, etc.)
+                pdf_page_idx = level_names.index(level_name) if level_name in level_names else 0
+                _render_pdf_background(c, archi_pdf_path, pdf_page_idx, w, h, opacity=0.15)
+
             ox, oy, sc, gw, gh = _grid_layout(w, h, nx, ny, px_m, py_m)
             _draw_grid_axes(c, ox, oy, sc, nx, ny, px_m, py_m, gw, gh)
             _draw_dalle_hatch(c, ox, oy, sc, nx, ny, px_m, py_m)
@@ -901,14 +964,12 @@ def generer_plans_structure(output_path, resultats=None, params=None, dwg_geomet
 # ══════════════════════════════════════════
 
 def generer_plans_mep(output_path, resultats_mep=None, resultats_structure=None,
-                      params=None, dwg_geometry=None, **kw):
+                      params=None, dwg_geometry=None, archi_pdf_path=None, **kw):
     """
-    Plans MEP. Deux modes :
-    - Avec dwg_geometry : fond de plan DWG réel du projet + MEP superposé
-      dwg_geometry peut être:
-        - un dict unique (1 seul niveau) : {'walls':[], 'rooms':[], ...}
-        - un dict de niveaux : {'SOUS_SOL': {...}, 'RDC': {...}, 'ETAGES_1_7': {...}, ...}
-    - Sans : grille paramétrique depuis ParamsProjet + MEP superposé
+    Plans MEP. Trois modes (par ordre de priorité) :
+    1. Avec dwg_geometry : fond de plan DWG/PDF réel + MEP superposé
+    2. Avec archi_pdf_path : PDF archi en fond grisé + grille MEP superposée
+    3. Sans : grille paramétrique depuis ParamsProjet + MEP superposé
     Équipements placés dans les pièces réelles depuis ResultatsMEP.
     """
     if resultats_mep is None:
@@ -1036,6 +1097,10 @@ def generer_plans_mep(output_path, resultats_mep=None, resultats_structure=None,
         # Always compute grid layout (needed for fallback bays calculation)
         ox_g, oy_g, sc_g, gw_g, gh_g = _grid_layout(w, h, nx, ny, px_m, py_m)
         if not use_dwg:
+            # Try PDF raster background if archi PDF available
+            if archi_pdf_path:
+                pdf_page_idx = min(level_idx, 4)  # cap at page 5
+                _render_pdf_background(c, archi_pdf_path, pdf_page_idx, w, h, opacity=0.12)
             ox, oy, gw, gh = ox_g, oy_g, gw_g, gh_g
             _draw_grid_axes(c, ox, oy, sc_g, nx, ny, px_m, py_m, gw, gh)
             _draw_poteaux(c, ox, oy, sc_g, nx, ny, px_m, py_m, pot_s)

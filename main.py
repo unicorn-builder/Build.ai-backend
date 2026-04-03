@@ -181,6 +181,7 @@ class ParamsProjet(BaseModel):
     avec_sous_sol:      bool  = False
     urn:                Optional[str] = None
     dwg_geometry:       Optional[dict] = None
+    archi_pdf_url:      Optional[str] = None  # URL of uploaded archi PDF for plan background
 
 
 # ════════════════════════════════════════════════════════════
@@ -387,16 +388,30 @@ async def parse_fichier(
             # PDF: extract params via Claude + try vector geometry extraction
             from parse_plans import extraire_params
             result = extraire_params(tmp_path)
-            # Try extracting vector geometry from PDF
-            try:
-                from dwg_converter import pdf_to_geometry
-                pdf_geom = pdf_to_geometry(tmp_path)
-                if pdf_geom:
-                    result["dwg_geometry"] = pdf_geom
-                    logger.info("PDF geometry: %d walls, %d rooms",
-                                len(pdf_geom.get('walls',[])), len(pdf_geom.get('rooms',[])))
-            except Exception as e:
-                logger.warning("PDF geometry extraction failed: %s", e)
+            # dwg_geometry may already be set by parse_plans (extract_pdf_geometry)
+            if not result.get("dwg_geometry"):
+                # Fallback: try dwg_converter.pdf_to_geometry
+                try:
+                    from dwg_converter import pdf_to_geometry
+                    pdf_geom = pdf_to_geometry(tmp_path)
+                    if pdf_geom:
+                        result["dwg_geometry"] = pdf_geom
+                        logger.info("PDF geometry (dwg_converter): %d walls, %d rooms",
+                                    len(pdf_geom.get('walls',[])), len(pdf_geom.get('rooms',[])))
+                except Exception as e:
+                    logger.warning("PDF geometry extraction (dwg_converter) failed: %s", e)
+                # Fallback 2: try our dedicated PDF geometry extractor
+                if not result.get("dwg_geometry"):
+                    try:
+                        from extract_pdf_geometry import extract_geometry_from_pdf
+                        pdf_geom = extract_geometry_from_pdf(tmp_path, max_pages=5)
+                        if pdf_geom:
+                            result["dwg_geometry"] = pdf_geom
+                            n_walls = len(pdf_geom.get('walls', [])) if 'walls' in pdf_geom else sum(
+                                len(v.get('walls', [])) for v in pdf_geom.values() if isinstance(v, dict))
+                            logger.info("PDF geometry (extract_pdf_geometry): %d walls", n_walls)
+                    except Exception as e:
+                        logger.warning("PDF geometry extraction (extract_pdf_geometry) failed: %s", e)
 
         else:
             from parse_plans import extraire_params
@@ -1334,8 +1349,9 @@ async def generate_plu(params: ParamsProjet):
 
 @app.post("/generate-plans-structure")
 async def generate_plans_structure(params: ParamsProjet):
-    """Plans structure PDF — géométrie DWG du projet si disponible, sinon grille paramétrique."""
+    """Plans structure PDF — géométrie DWG/PDF du projet si disponible, sinon grille paramétrique."""
     out_path = None
+    archi_pdf_path = None
     try:
         _, _, calculer_structure = get_moteur_structure()
         from generate_plans_structure_mep import generer_plans_structure
@@ -1345,10 +1361,14 @@ async def generate_plans_structure(params: ParamsProjet):
         dwg_geometry = params.dwg_geometry
         if not dwg_geometry and params.urn:
             dwg_geometry = _load_project_geometry(params.urn)
+        # Download archi PDF for background if URL provided and no DWG
+        if not dwg_geometry and params.archi_pdf_url:
+            archi_pdf_path = _download_archi_pdf(params.archi_pdf_url)
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
             out_path = tmp.name
         generer_plans_structure(out_path, resultats=rs, params=params.dict(),
-                                dwg_geometry=dwg_geometry)
+                                dwg_geometry=dwg_geometry,
+                                archi_pdf_path=archi_pdf_path)
         with open(out_path, "rb") as f:
             pdf_bytes = f.read()
         return pdf_response(pdf_bytes, fname(params, "plans_structure"))
@@ -1361,13 +1381,19 @@ async def generate_plans_structure(params: ParamsProjet):
                 os.unlink(out_path)
             except OSError:
                 pass
+        if archi_pdf_path:
+            try:
+                os.unlink(archi_pdf_path)
+            except OSError:
+                pass
         gc.collect()
 
 
 @app.post("/generate-plans-mep")
 async def generate_plans_mep(params: ParamsProjet):
-    """Plans MEP PDF — géométrie DWG du projet si disponible, sinon grille paramétrique."""
+    """Plans MEP PDF — géométrie DWG/PDF du projet si disponible, sinon grille paramétrique."""
     out_path = None
+    archi_pdf_path = None
     try:
         _, _, calculer_structure = get_moteur_structure()
         calculer_mep = get_moteur_mep()
@@ -1378,10 +1404,14 @@ async def generate_plans_mep(params: ParamsProjet):
         dwg_geometry = params.dwg_geometry
         if not dwg_geometry and params.urn:
             dwg_geometry = _load_project_geometry(params.urn)
+        # Download archi PDF for background if URL provided and no DWG
+        if not dwg_geometry and params.archi_pdf_url:
+            archi_pdf_path = _download_archi_pdf(params.archi_pdf_url)
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
             out_path = tmp.name
         generer_plans_mep(out_path, resultats_mep=rm, resultats_structure=rs,
-                          params=params.dict(), dwg_geometry=dwg_geometry)
+                          params=params.dict(), dwg_geometry=dwg_geometry,
+                          archi_pdf_path=archi_pdf_path)
         with open(out_path, "rb") as f:
             pdf_bytes = f.read()
         return pdf_response(pdf_bytes, fname(params, "plans_mep"))
@@ -1392,6 +1422,11 @@ async def generate_plans_mep(params: ParamsProjet):
         if out_path:
             try:
                 os.unlink(out_path)
+            except OSError:
+                pass
+        if archi_pdf_path:
+            try:
+                os.unlink(archi_pdf_path)
             except OSError:
                 pass
         gc.collect()
@@ -1469,6 +1504,22 @@ async def generate_plans_mep_dwg(params: ParamsProjet):
             except OSError:
                 pass
         gc.collect()
+
+
+def _download_archi_pdf(url: str) -> str:
+    """Download architectural PDF from URL to temp file. Returns path or None."""
+    if not url:
+        return None
+    try:
+        with httpx.Client(timeout=20) as client:
+            resp = client.get(url)
+            resp.raise_for_status()
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+                tmp.write(resp.content)
+                return tmp.name
+    except Exception as e:
+        logger.warning(f"Failed to download archi PDF from {url[:80]}: {e}")
+        return None
 
 
 def _load_project_geometry(urn: str) -> dict:
