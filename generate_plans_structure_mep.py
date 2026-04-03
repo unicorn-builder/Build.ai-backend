@@ -1142,8 +1142,8 @@ def generer_plans_structure(output_path, resultats=None, params=None, dwg_geomet
                     c.restoreState()
                 rendered = True
 
-        # ── MODE 2: DWG REDRAW (for actual DWG/DXF uploads with mm coordinates) ──
-        if not rendered and has_geom and not is_from_pdf:
+        # ── MODE 2: DWG REDRAW (any geometry — works for DWG mm or DXF model units) ──
+        if not rendered and has_geom:
             dtx, dty, dsc, dgw, dgh = _dwg_layout(w, h, lvl_geom)
             if dtx:
                 # Draw architecture — thin clean lines (not thick black rectangles)
@@ -1245,7 +1245,7 @@ def generer_plans_structure(output_path, resultats=None, params=None, dwg_geomet
                 rendered_dalle = True
 
     # MODE 2: DWG redraw for ferraillage
-    if not rendered_dalle and has_geom_d and not is_from_pdf_d:
+    if not rendered_dalle and has_geom_d:
         dtx, dty, dsc, dgw, dgh = _dwg_layout(w, h, lvl_geom)
         if dtx:
             _draw_dwg(c, lvl_geom, dtx, dty, sc=dsc)
@@ -1366,7 +1366,7 @@ def generer_plans_structure(output_path, resultats=None, params=None, dwg_geomet
                 rendered_fond = True
 
     # MODE 2: DWG redraw
-    if not rendered_fond and has_geom_f and not is_from_pdf_f:
+    if not rendered_fond and has_geom_f:
         dtx, dty, dsc, dgw, dgh = _dwg_layout(w, h, lvl_geom)
         if dtx:
             _draw_dwg(c, lvl_geom, dtx, dty, sc=dsc)
@@ -1761,8 +1761,8 @@ def generer_plans_mep(output_path, resultats_mep=None, resultats_structure=None,
                 _draw_poteaux(c, ox, oy, sc_g, nx, ny, px_m, py_m, pot_s)
                 c.restoreState()
 
-        # MODE 2: DWG redraw (for actual DWG/DXF uploads)
-        elif has_geom_mep and not is_from_pdf_mep:
+        # MODE 2: DWG redraw (any geometry — DWG mm or DXF model units)
+        elif has_geom_mep:
             dwg_tx, dwg_ty, dwg_sc, dwg_gw, dwg_gh = _dwg_layout(w, h, level_geom)
             if dwg_tx:
                 _draw_dwg(c, level_geom, dwg_tx, dwg_ty, light=True, sc=dwg_sc)
