@@ -388,9 +388,9 @@ async def parse_fichier(
             # PDF: extract params via Claude + try vector geometry extraction
             from parse_plans import extraire_params
             result = extraire_params(tmp_path)
-            # dwg_geometry may already be set by parse_plans (extract_pdf_geometry)
+            # Try extracting vector geometry from PDF (cascade: dwg_converter first, then extract_pdf_geometry)
             if not result.get("dwg_geometry"):
-                # Fallback: try dwg_converter.pdf_to_geometry
+                # Primary: dwg_converter.pdf_to_geometry (proven to work)
                 try:
                     from dwg_converter import pdf_to_geometry
                     pdf_geom = pdf_to_geometry(tmp_path)
