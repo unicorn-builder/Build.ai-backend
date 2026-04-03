@@ -444,20 +444,25 @@ def _dwg_layout(w, h, dwg, ml=50*mm, mb=55*mm, mr=72*mm, mt=30*mm):
 def _draw_dwg(c, dwg, tx, ty, light=False, sc=None):
     """Dessine la géométrie DWG réelle (murs, fenêtres, portes, labels).
     light=True pour les plans MEP (architecture très claire en fond).
-    sc = scale factor (mm to points) for thickness calculation."""
+    sc = scale factor (mm to points) for thickness calculation.
+
+    For DWG uploads (mm coordinates), uses clean double-line walls.
+    For any coordinates, wall thickness is capped to avoid dominating the view.
+    """
     import re
 
-    # Wall thickness in drawing units (use scale to get proper visual thickness)
-    wall_thick_pt = 1.8  # default wall line weight in points
+    # Wall line weight — clean, architectural look
+    # For DWG mm coords: 200mm wall * sc gives proper thickness
+    # Capped to prevent thick black rectangles
+    wall_lw = 0.8  # default line weight in points
     if sc and sc > 0:
-        # 200mm wall at scale → visible thickness
-        wall_thick_pt = max(200 * sc * 0.6, 0.8)
-        wall_thick_pt = min(wall_thick_pt, 4.0)  # cap at 4pt
+        wall_lw = max(200 * sc * 0.4, 0.5)
+        wall_lw = min(wall_lw, 2.0)  # strict cap at 2pt for clean look
 
-    # ── Murs — double-line style for structure, single for MEP ──
+    # ── Murs ──
     if light:
         # MEP background: light single lines
-        c.setStrokeColor(colors.HexColor("#CCCCCC")); c.setLineWidth(0.3)
+        c.setStrokeColor(colors.HexColor("#BBBBBB")); c.setLineWidth(0.4)
         for item in dwg.get('walls', []):
             if item['type'] == 'line':
                 c.line(tx(item['start'][0]), ty(item['start'][1]),
@@ -471,29 +476,20 @@ def _draw_dwg(c, dwg, tx, ty, light=False, sc=None):
                     c.line(tx(pts[-1][0]), ty(pts[-1][1]),
                            tx(pts[0][0]), ty(pts[0][1]))
     else:
-        # Structure: thick walls with fill for visibility
-        wall_fill = colors.HexColor("#E0E0E0")
-        wall_stroke = colors.HexColor("#333333")
+        # Structure: clean architectural lines (NOT thick filled rectangles)
+        c.setStrokeColor(colors.HexColor("#444444")); c.setLineWidth(wall_lw)
         for item in dwg.get('walls', []):
             if item['type'] == 'line':
-                x1, y1 = tx(item['start'][0]), ty(item['start'][1])
-                x2, y2 = tx(item['end'][0]), ty(item['end'][1])
-                # Draw thick filled wall (rectangle along the line)
-                c.setStrokeColor(wall_stroke); c.setLineWidth(0.3)
-                c.setFillColor(wall_fill)
-                _draw_thick_wall(c, x1, y1, x2, y2, wall_thick_pt)
+                c.line(tx(item['start'][0]), ty(item['start'][1]),
+                       tx(item['end'][0]), ty(item['end'][1]))
             elif item['type'] == 'polyline':
                 pts = item['points']
-                c.setStrokeColor(wall_stroke); c.setLineWidth(0.3)
-                c.setFillColor(wall_fill)
                 for i in range(len(pts)-1):
-                    x1, y1 = tx(pts[i][0]), ty(pts[i][1])
-                    x2, y2 = tx(pts[i+1][0]), ty(pts[i+1][1])
-                    _draw_thick_wall(c, x1, y1, x2, y2, wall_thick_pt)
+                    c.line(tx(pts[i][0]), ty(pts[i][1]),
+                           tx(pts[i+1][0]), ty(pts[i+1][1]))
                 if item.get('closed') and len(pts) > 2:
-                    x1, y1 = tx(pts[-1][0]), ty(pts[-1][1])
-                    x2, y2 = tx(pts[0][0]), ty(pts[0][1])
-                    _draw_thick_wall(c, x1, y1, x2, y2, wall_thick_pt)
+                    c.line(tx(pts[-1][0]), ty(pts[-1][1]),
+                           tx(pts[0][0]), ty(pts[0][1]))
 
     # ── Fenêtres — blue thin lines with gap ──
     win_color = colors.HexColor("#D6E8F5") if light else colors.HexColor("#64B5F6")
@@ -555,6 +551,257 @@ def _draw_thick_wall(c, x1, y1, x2, y2, thickness):
     path.lineTo(x1 - nx, y1 - ny)
     path.close()
     c.drawPath(path, fill=1, stroke=1)
+
+
+# ══════════════════════════════════════════
+# PDF-BACKGROUND MODE — lightweight annotations over architect's original
+# ══════════════════════════════════════════
+
+def _draw_coffrage_annotations(c, tx, ty, axes_x, axes_y, pot_s, pp_b, pp_h,
+                                ps_b, ps_h, dalle_ep, px_m, py_m, beton, acier):
+    """Draw structural coffrage annotations on top of a PDF background.
+
+    Only draws lightweight overlay: axis lines, axis labels, column markers,
+    beam indicators, slab labels. Does NOT redraw walls/windows/doors.
+    """
+    if not axes_x or not axes_y:
+        return
+
+    # ── Axis lines — thin dashed, semi-transparent ──
+    c.saveState()
+    c.setStrokeAlpha(0.5)
+    c.setStrokeColor(colors.HexColor("#CC3333")); c.setLineWidth(0.4); c.setDash(8, 4)
+    y_lo = ty(axes_y[-1]) - 10*mm  # lowest point (Y flipped)
+    y_hi = ty(axes_y[0]) + 10*mm   # highest point
+    x_lo = tx(axes_x[0]) - 10*mm
+    x_hi = tx(axes_x[-1]) + 10*mm
+    for ax in axes_x:
+        c.line(tx(ax), y_lo, tx(ax), y_hi)
+    for ay in axes_y:
+        c.line(x_lo, ty(ay), x_hi, ty(ay))
+    c.setDash()
+    c.restoreState()
+
+    # ── Axis labels — numbered/lettered circles ──
+    for i, ax in enumerate(axes_x):
+        _axis_label(c, tx(ax), y_lo - 5*mm, str(i + 1))
+        _axis_label(c, tx(ax), y_hi + 5*mm, str(i + 1))
+    for j, ay in enumerate(axes_y):
+        _axis_label(c, x_lo - 5*mm, ty(ay), chr(65 + (j % 26)))
+        _axis_label(c, x_hi + 5*mm, ty(ay), chr(65 + (j % 26)))
+
+    # ── Dimension labels between axes ──
+    c.setFillColor(GRIS2); c.setFont("Helvetica", 5)
+    for i in range(len(axes_x) - 1):
+        span_m = px_m  # use project portée (PDF coords don't convert to meters reliably)
+        mid_x = (tx(axes_x[i]) + tx(axes_x[i+1])) / 2
+        c.drawCentredString(mid_x, y_lo - 12*mm, f"{span_m:.2f}m")
+    for j in range(len(axes_y) - 1):
+        span_m = py_m
+        mid_y = (ty(axes_y[j]) + ty(axes_y[j+1])) / 2
+        c.saveState()
+        c.translate(x_lo - 12*mm, mid_y); c.rotate(90)
+        c.drawCentredString(0, 0, f"{span_m:.2f}m")
+        c.restoreState()
+
+    # ── Poteaux (columns) — small red-outlined squares at intersections ──
+    pt_d = 6  # fixed 6pt column marker — visible but not dominating
+    for ax in axes_x:
+        for ay in axes_y:
+            px, py = tx(ax), ty(ay)
+            c.setFillColor(colors.HexColor("#FFCCCC"))  # light red fill
+            c.setStrokeColor(ROUGE); c.setLineWidth(0.6)
+            c.rect(px - pt_d/2, py - pt_d/2, pt_d, pt_d, fill=1, stroke=1)
+            # Label — tiny section text
+            c.setFillColor(ROUGE); c.setFont("Helvetica-Bold", 2.5)
+            c.drawCentredString(px, py - 1, f"{pot_s}")
+
+    # ── Poutres principales (main beams) — semi-transparent thick lines ──
+    c.saveState()
+    c.setStrokeAlpha(0.4)
+    c.setStrokeColor(NOIR); c.setLineWidth(2.5)
+    for ay in axes_y:
+        py = ty(ay)
+        for i in range(len(axes_x) - 1):
+            c.line(tx(axes_x[i]), py, tx(axes_x[i+1]), py)
+    c.restoreState()
+    # Label PP on first span
+    if len(axes_x) >= 2 and len(axes_y) >= 1:
+        c.setFillColor(ROUGE); c.setFont("Helvetica-Bold", 4)
+        mid_x = (tx(axes_x[0]) + tx(axes_x[1])) / 2
+        c.drawCentredString(mid_x, ty(axes_y[0]) + 5, f"PP {pp_b}×{pp_h}")
+
+    # ── Poutres secondaires — thinner semi-transparent ──
+    c.saveState()
+    c.setStrokeAlpha(0.3)
+    c.setStrokeColor(GRIS3); c.setLineWidth(1.2)
+    for ax in axes_x:
+        px = tx(ax)
+        for j in range(len(axes_y) - 1):
+            c.line(px, ty(axes_y[j]), px, ty(axes_y[j+1]))
+    c.restoreState()
+
+    # ── Dalle labels — section in large panels ──
+    c.setFont("Helvetica", 4); c.setFillColor(GRIS2)
+    for i in range(len(axes_x) - 1):
+        for j in range(len(axes_y) - 1):
+            cx = (tx(axes_x[i]) + tx(axes_x[i+1])) / 2
+            cy = (ty(axes_y[j]) + ty(axes_y[j+1])) / 2
+            sw = abs(tx(axes_x[i+1]) - tx(axes_x[i]))
+            sh = abs(ty(axes_y[j+1]) - ty(axes_y[j]))
+            if sw > 20 and sh > 20:
+                c.drawCentredString(cx, cy + 3, f"Dalle ep.{dalle_ep}")
+                c.setFont("Helvetica", 3)
+                c.drawCentredString(cx, cy - 4, f"{px_m:.1f}×{py_m:.1f}m")
+                c.setFont("Helvetica", 4)
+
+    # ── Light diagonal hatch for slab panels ──
+    c.saveState()
+    c.setStrokeAlpha(0.12)
+    c.setStrokeColor(GRIS4); c.setLineWidth(0.15)
+    for i in range(len(axes_x) - 1):
+        for j in range(len(axes_y) - 1):
+            x1p = tx(axes_x[i]) + 3; x2p = tx(axes_x[i+1]) - 3
+            y1p_d = min(ty(axes_y[j]), ty(axes_y[j+1])) + 3
+            y2p_d = max(ty(axes_y[j]), ty(axes_y[j+1])) - 3
+            sw = x2p - x1p; sh = y2p_d - y1p_d
+            if sw > 10 and sh > 10:
+                step = max(10, int(sw / 6))
+                for k in range(0, int(sw + sh), step):
+                    lx1 = x1p + min(k, sw); ly1 = y1p_d + max(0, k - sw)
+                    lx2 = x1p + max(0, k - sh); ly2 = y1p_d + min(k, sh)
+                    c.line(lx1, ly1, lx2, ly2)
+    c.restoreState()
+
+
+def _draw_mep_annotations(c, tx, ty, axes_x, axes_y, rooms, key, sublot_data,
+                          pot_s):
+    """Draw MEP equipment annotations on top of a PDF background.
+
+    Only draws equipment symbols at room positions. Does NOT redraw walls.
+    sublot_data is the MEP results object for the current sub-lot.
+    """
+    import re as _re
+
+    # Draw faint axes for reference
+    if axes_x and axes_y:
+        c.saveState()
+        c.setStrokeAlpha(0.2)
+        c.setStrokeColor(GRIS4); c.setLineWidth(0.3); c.setDash(4, 4)
+        y_lo = min(ty(axes_y[0]), ty(axes_y[-1])) - 5*mm
+        y_hi = max(ty(axes_y[0]), ty(axes_y[-1])) + 5*mm
+        x_lo = tx(axes_x[0]) - 5*mm
+        x_hi = tx(axes_x[-1]) + 5*mm
+        for ax in axes_x:
+            c.line(tx(ax), y_lo, tx(ax), y_hi)
+        for ay in axes_y:
+            c.line(x_lo, ty(ay), x_hi, ty(ay))
+        c.setDash()
+        c.restoreState()
+
+    # Classify rooms
+    def _classify(rooms):
+        wet, living, service = [], [], []
+        for r in rooms:
+            n = r.get('name', '').lower().strip()
+            if _re.match(r'^\d', n):
+                continue
+            if any(k in n for k in ['sdb', 'wc', 'toil', 'douche']):
+                wet.append({**r, 'rt': 'wet'})
+            elif any(k in n for k in ['cuisine', 'kitch', 'buanderie']):
+                wet.append({**r, 'rt': 'kitchen'})
+            elif any(k in n for k in ['salon', 'chambre', 'sejour', 'bureau', 'sam', 'bar',
+                                       'gym', 'restaurant', 'magasin', 'salle']):
+                living.append({**r, 'rt': 'living'})
+            elif any(k in n for k in ['hall', 'palier', 'asc', 'dgt', 'sas', 'terrasse',
+                                       'balcon', 'jardin', 'piscine', 'vide', 'porche']):
+                service.append({**r, 'rt': 'service'})
+            else:
+                living.append({**r, 'rt': 'other'})
+        return wet, living, service
+
+    wet, living, service = _classify(rooms)
+    all_rooms = wet + living + service
+
+    # Color map per sub-lot key
+    colors_map = {
+        'plb_ef': BLEU, 'plb_ec': ROUGE, 'plb_eu': VERT,
+        'elec_ecl': JAUNE, 'elec_dist': ORANGE,
+        'cvc_clim': CYAN, 'cvc_vmc': VIOLET,
+        'ssi_det': ROUGE, 'ssi_ext': ROUGE,
+        'cfa': MARRON, 'asc_plan': GRIS2, 'gtb': VERT,
+    }
+    color = colors_map.get(key, BLEU)
+
+    # Determine which rooms get equipment
+    if key.startswith('plb_'):
+        target = wet
+    elif key.startswith('elec_'):
+        target = all_rooms
+    elif key.startswith('cvc_'):
+        target = living if 'clim' in key else wet
+    elif key.startswith('ssi_'):
+        target = all_rooms
+    elif key == 'cfa':
+        target = living
+    elif key == 'asc_plan':
+        target = [r for r in service if 'asc' in r.get('name', '').lower() or 'palier' in r.get('name', '').lower()]
+    elif key == 'gtb':
+        target = all_rooms
+    else:
+        target = all_rooms
+
+    # Draw equipment symbols
+    for r in target:
+        rx, ry = tx(r['x']), ty(r['y'])
+        name = r.get('name', '').lower()
+
+        c.setFillColor(color); c.setStrokeColor(NOIR); c.setLineWidth(0.4)
+
+        if key in ('plb_ef', 'plb_ec'):
+            # Circle with label
+            c.circle(rx, ry, 5, fill=1, stroke=1)
+            c.setFillColor(BLANC); c.setFont("Helvetica-Bold", 4)
+            label = "EF" if key == 'plb_ef' else "EC"
+            c.drawCentredString(rx, ry - 1.5, label)
+        elif key == 'plb_eu':
+            # Down arrow (drain)
+            c.circle(rx, ry, 4, fill=1, stroke=1)
+            c.setFillColor(BLANC); c.setFont("Helvetica-Bold", 4)
+            c.drawCentredString(rx, ry - 1.5, "EU")
+        elif key == 'elec_ecl':
+            # Lighting symbol (X in circle)
+            c.setStrokeColor(color); c.setLineWidth(0.6)
+            c.circle(rx, ry, 4, fill=0, stroke=1)
+            c.line(rx-2.5, ry-2.5, rx+2.5, ry+2.5)
+            c.line(rx-2.5, ry+2.5, rx+2.5, ry-2.5)
+        elif key == 'elec_dist':
+            # Outlet symbol (small square)
+            c.rect(rx-3, ry-3, 6, 6, fill=1, stroke=1)
+        elif key.startswith('cvc_'):
+            # HVAC symbol
+            c.rect(rx-5, ry-3, 10, 6, fill=1, stroke=1)
+            c.setFillColor(BLANC); c.setFont("Helvetica-Bold", 3.5)
+            c.drawCentredString(rx, ry - 1.5, "CLIM" if 'clim' in key else "VMC")
+        elif key.startswith('ssi_'):
+            # Fire safety — triangle
+            path = c.beginPath()
+            path.moveTo(rx, ry + 5); path.lineTo(rx - 4, ry - 3); path.lineTo(rx + 4, ry - 3)
+            path.close()
+            c.drawPath(path, fill=1, stroke=1)
+            c.setFillColor(BLANC); c.setFont("Helvetica-Bold", 3)
+            c.drawCentredString(rx, ry - 1, "D" if 'det' in key else "E")
+        elif key == 'asc_plan':
+            c.circle(rx, ry, 8, fill=0, stroke=1)
+            c.setFillColor(color); c.setFont("Helvetica-Bold", 5)
+            c.drawCentredString(rx, ry - 2, "ASC")
+        else:
+            c.circle(rx, ry, 4, fill=1, stroke=1)
+
+        # Room name label (tiny, below equipment)
+        c.setFillColor(GRIS2); c.setFont("Helvetica", 2.5)
+        short_name = r.get('name', '')[:15]
+        c.drawCentredString(rx, ry - 9, short_name)
 
 
 # ══════════════════════════════════════════
@@ -667,11 +914,17 @@ def _legend(c, w, h, items):
 
 def _render_pdf_background(c, archi_pdf_path, page_idx, w, h,
                             ml=50*mm, mb=55*mm, mr=72*mm, mt=30*mm,
-                            opacity=0.18):
-    """Render a page from the architectural PDF as a light background image.
+                            opacity=0.18, dpi=150):
+    """Render a page from the architectural PDF as a background image.
 
     Uses PyMuPDF to rasterize the page, then places it on the ReportLab canvas.
-    The image is rendered at low opacity so structural/MEP overlays remain readable.
+
+    Returns (success, placement_dict) where placement_dict contains:
+        ox, oy: bottom-left of the placed image on the ReportLab page
+        draw_w, draw_h: size of the placed image on the page
+        pdf_w_pt, pdf_h_pt: original PDF page size in points
+        scale: mapping factor from PDF points to page points
+    This allows callers to build tx/ty transforms that align with the background.
     """
     try:
         import fitz
@@ -681,11 +934,15 @@ def _render_pdf_background(c, archi_pdf_path, page_idx, w, h,
         doc = fitz.open(archi_pdf_path)
         if page_idx >= len(doc):
             doc.close()
-            return False
+            return False, {}
 
         page = doc[page_idx]
-        # Render at 150 DPI for decent quality without huge file size
-        mat = fitz.Matrix(150/72, 150/72)
+        pdf_rect = page.rect  # PDF page dimensions in points
+        pdf_w_pt = pdf_rect.width
+        pdf_h_pt = pdf_rect.height
+
+        # Render at specified DPI
+        mat = fitz.Matrix(dpi / 72, dpi / 72)
         pix = page.get_pixmap(matrix=mat, alpha=False)
         img_bytes = pix.tobytes("png")
         doc.close()
@@ -695,13 +952,16 @@ def _render_pdf_background(c, archi_pdf_path, page_idx, w, h,
         ah = h - mb - mt
         img_w = pix.width
         img_h = pix.height
-        scale = min(aw / img_w, ah / img_h)
-        draw_w = img_w * scale
-        draw_h = img_h * scale
+        img_scale = min(aw / img_w, ah / img_h)
+        draw_w = img_w * img_scale
+        draw_h = img_h * img_scale
         ox = ml + (aw - draw_w) / 2
         oy = mb + (ah - draw_h) / 2
 
-        # Draw with low opacity
+        # Scale from PDF points to placed-image points
+        pdf_to_page = draw_w / pdf_w_pt  # same as draw_h / pdf_h_pt
+
+        # Draw with specified opacity
         c.saveState()
         c.setFillAlpha(opacity)
         c.setStrokeAlpha(opacity)
@@ -709,12 +969,42 @@ def _render_pdf_background(c, archi_pdf_path, page_idx, w, h,
         c.drawImage(img_reader, ox, oy, draw_w, draw_h,
                     preserveAspectRatio=True, anchor='c')
         c.restoreState()
-        return True
+
+        placement = {
+            'ox': ox, 'oy': oy,
+            'draw_w': draw_w, 'draw_h': draw_h,
+            'pdf_w_pt': pdf_w_pt, 'pdf_h_pt': pdf_h_pt,
+            'scale': pdf_to_page,
+        }
+        return True, placement
 
     except Exception as e:
         import logging
         logging.getLogger("tijan").warning(f"PDF background render failed: {e}")
-        return False
+        return False, {}
+
+
+def _pdf_bg_transforms(placement, pdf_h_pt):
+    """Build tx/ty transforms from PDF-point coordinates to page coordinates.
+
+    PDF coordinate system: origin at bottom-left, Y up (same as ReportLab).
+    But pdf_to_geometry() returns coordinates from get_drawings() which uses
+    PDF's native coordinate system where Y=0 is at the TOP of the page.
+    So we need to flip Y: page_y = oy + (pdf_h_pt - geo_y) * scale.
+    """
+    ox = placement['ox']
+    oy = placement['oy']
+    sc = placement['scale']
+    h = pdf_h_pt
+
+    def tx(x):
+        return ox + x * sc
+
+    def ty(y):
+        # Flip Y: PDF get_drawings() has Y=0 at top
+        return oy + (h - y) * sc
+
+    return tx, ty, sc
 
 
 # ══════════════════════════════════════════
@@ -801,138 +1091,85 @@ def generer_plans_structure(output_path, resultats=None, params=None, dwg_geomet
 
         # DWG geometry for this level if available
         lvl_geom = dwg_levels.get(level_name) or dwg_levels.get('Étage courant')
-        use_dwg = lvl_geom and len(lvl_geom.get('walls', [])) >= 5
+        has_geom = lvl_geom and len(lvl_geom.get('walls', [])) >= 5
 
-        if use_dwg:
+        # Detect if geometry came from PDF (coordinates in points, small range)
+        # vs DWG (coordinates in mm, large range)
+        is_from_pdf = False
+        if has_geom:
+            bounds = _dwg_bounds(lvl_geom)
+            if bounds:
+                span = max(bounds[2] - bounds[0], bounds[3] - bounds[1])
+                is_from_pdf = span < 5000  # PDF points are typically < 2000
+
+        rendered = False
+
+        # ── MODE 1: PDF BACKGROUND (primary for PDF uploads) ──
+        # When we have the original PDF, use it as high-quality background
+        # and overlay lightweight structural annotations only.
+        if archi_pdf_path and (is_from_pdf or not has_geom):
+            pdf_page_idx = level_names.index(level_name) if level_name in level_names else 0
+            ok, placement = _render_pdf_background(
+                c, archi_pdf_path, pdf_page_idx, w, h,
+                opacity=0.85, dpi=200  # high quality, high opacity
+            )
+            if ok and placement:
+                # Get axes from extracted geometry (used for annotation positioning)
+                axes_x = lvl_geom.get('axes_x', []) if has_geom else []
+                axes_y = lvl_geom.get('axes_y', []) if has_geom else []
+                if axes_x and axes_y and placement.get('pdf_h_pt'):
+                    # Build transforms aligned with PDF background
+                    pdf_tx, pdf_ty, pdf_sc = _pdf_bg_transforms(
+                        placement, placement['pdf_h_pt']
+                    )
+                    _draw_coffrage_annotations(
+                        c, pdf_tx, pdf_ty, axes_x, axes_y,
+                        pot_s, pp_b, pp_h, ps_b, ps_h, dalle_ep,
+                        px_m, py_m, beton, acier
+                    )
+                else:
+                    # No axes — overlay parametric grid on top of PDF background
+                    ox, oy, sc, gw, gh = _grid_layout(w, h, nx, ny, px_m, py_m)
+                    c.saveState(); c.setStrokeAlpha(0.5); c.setFillAlpha(0.6)
+                    _draw_grid_axes(c, ox, oy, sc, nx, ny, px_m, py_m, gw, gh)
+                    _draw_poutres_pp(c, ox, oy, sc, nx, ny, px_m, py_m, pp_b)
+                    _draw_poutres_ps(c, ox, oy, sc, nx, ny, px_m, py_m)
+                    _draw_poteaux(c, ox, oy, sc, nx, ny, px_m, py_m, pot_s)
+                    c.restoreState()
+                rendered = True
+
+        # ── MODE 2: DWG REDRAW (for actual DWG/DXF uploads with mm coordinates) ──
+        if not rendered and has_geom and not is_from_pdf:
             dtx, dty, dsc, dgw, dgh = _dwg_layout(w, h, lvl_geom)
             if dtx:
-                # 1. Architecture with thick walls
+                # Draw architecture — thin clean lines (not thick black rectangles)
                 _draw_dwg(c, lvl_geom, dtx, dty, sc=dsc)
 
                 real_ax = lvl_geom.get('axes_x', [])
                 real_ay = lvl_geom.get('axes_y', [])
                 if real_ax and real_ay:
-                    # 2. Axes structurels — tirets fins gris
-                    c.setStrokeColor(GRIS4); c.setLineWidth(0.3); c.setDash(6, 3)
-                    y_ext_lo = dty(real_ay[0]) - 12*mm
-                    y_ext_hi = dty(real_ay[-1]) + 12*mm
-                    x_ext_lo = dtx(real_ax[0]) - 12*mm
-                    x_ext_hi = dtx(real_ax[-1]) + 12*mm
-                    for ax in real_ax:
-                        c.line(dtx(ax), y_ext_lo, dtx(ax), y_ext_hi)
-                    for ay in real_ay:
-                        c.line(x_ext_lo, dty(ay), x_ext_hi, dty(ay))
-                    c.setDash()
-
-                    # 3. Axis labels — cercles numérotés
-                    for i, ax in enumerate(real_ax):
-                        _axis_label(c, dtx(ax), y_ext_lo - 6*mm, str(i+1))
-                        _axis_label(c, dtx(ax), y_ext_hi + 6*mm, str(i+1))
-                    for j, ay in enumerate(real_ay):
-                        _axis_label(c, x_ext_lo - 6*mm, dty(ay), chr(65 + (j % 26)))
-                        _axis_label(c, x_ext_hi + 6*mm, dty(ay), chr(65 + (j % 26)))
-
-                    # 4. Cotations portées entre axes (en bas)
-                    # Detect coordinate scale: mm (>5000 span) vs PDF pts (<5000)
-                    total_span_x = real_ax[-1] - real_ax[0] if len(real_ax) > 1 else 0
-                    total_span_y = abs(real_ay[-1] - real_ay[0]) if len(real_ay) > 1 else 0
-                    is_mm = max(total_span_x, total_span_y) > 5000
-                    coord_to_m = 1000.0 if is_mm else 1.0  # mm→m or use project portée
-
-                    c.setFillColor(GRIS2); c.setFont("Helvetica", 4)
-                    for i in range(len(real_ax)-1):
-                        raw_span = abs(real_ax[i+1] - real_ax[i])
-                        span_m = raw_span / coord_to_m if is_mm else px_m
-                        mid_x = dtx((real_ax[i] + real_ax[i+1]) / 2)
-                        c.drawCentredString(mid_x, y_ext_lo - 13*mm, f"{span_m:.2f}m")
-                    for j in range(len(real_ay)-1):
-                        raw_span = abs(real_ay[j+1] - real_ay[j])
-                        span_m = raw_span / coord_to_m if is_mm else py_m
-                        mid_y = dty((real_ay[j] + real_ay[j+1]) / 2)
-                        c.saveState()
-                        c.translate(x_ext_lo - 13*mm, mid_y); c.rotate(90)
-                        c.drawCentredString(0, 0, f"{span_m:.2f}m")
-                        c.restoreState()
-
-                    # 5. Dalle hatch — léger, seulement les grands panneaux
-                    c.setStrokeColor(GRIS4); c.setLineWidth(0.08)
-                    for i in range(len(real_ax)-1):
-                        for j in range(len(real_ay)-1):
-                            x1p = dtx(real_ax[i]) + 3; x2p = dtx(real_ax[i+1]) - 3
-                            y1p = dty(real_ay[j]) + 3; y2p = dty(real_ay[j+1]) - 3
-                            sw = x2p-x1p; sh = y2p-y1p
-                            if sw > 8 and sh > 8:
-                                step = max(8, int(sw/8))
-                                for k in range(0, int(sw+sh), step):
-                                    lx1 = x1p+min(k,sw); ly1 = y1p+max(0,k-sw)
-                                    lx2 = x1p+max(0,k-sh); ly2 = y1p+min(k,sh)
-                                    c.line(lx1,ly1,lx2,ly2)
-
-                    # 6. Poutres principales — trait épais noir + label section
-                    pp_w = max(pp_b * dsc / (1000 if is_mm else 3), 1)  # beam width on page
-                    c.setStrokeColor(NOIR); c.setLineWidth(max(pp_w, 1.2))
-                    for ay in real_ay:
-                        py = dty(ay)
-                        for i in range(len(real_ax)-1):
-                            px1 = dtx(real_ax[i]); px2 = dtx(real_ax[i+1])
-                            c.line(px1, py, px2, py)
-                            # Label PP section au milieu du premier span de chaque axe
-                            if i == 0:
-                                c.setFillColor(ROUGE); c.setFont("Helvetica-Bold", 3)
-                                c.drawCentredString((px1+px2)/2, py + 3, f"PP {pp_b}×{pp_h}")
-
-                    # 7. Poutres secondaires — trait moyen gris
-                    c.setStrokeColor(GRIS3); c.setLineWidth(0.6)
-                    for ax in real_ax:
-                        px = dtx(ax)
-                        for j in range(len(real_ay)-1):
-                            c.line(px, dty(real_ay[j]), px, dty(real_ay[j+1]))
-
-                    # 8. Poteaux — carrés noirs aux intersections, taille visible
-                    pt_d = max(pot_s * dsc / (1 if is_mm else 300), 4)  # ensure visible
-                    for ax in real_ax:
-                        for ay in real_ay:
-                            px, py = dtx(ax), dty(ay)
-                            c.setFillColor(NOIR); c.setStrokeColor(NOIR); c.setLineWidth(0.4)
-                            c.rect(px - pt_d/2, py - pt_d/2, pt_d, pt_d, fill=1, stroke=1)
-
-                    # 9. Dalle labels — section + épaisseur dans les grands panneaux
-                    c.setFillColor(GRIS2); c.setFont("Helvetica", 3.5)
-                    for i in range(len(real_ax)-1):
-                        for j in range(len(real_ay)-1):
-                            x1p = dtx(real_ax[i]); x2p = dtx(real_ax[i+1])
-                            y1p = dty(real_ay[j]); y2p = dty(real_ay[j+1])
-                            sw = x2p-x1p; sh = y2p-y1p
-                            if sw > 15 and sh > 15:
-                                cx_d = (x1p+x2p)/2; cy_d = (y1p+y2p)/2
-                                c.drawCentredString(cx_d, cy_d + 2, f"Dalle ep.{dalle_ep}")
-                                span_x = abs(real_ax[i+1]-real_ax[i]) / coord_to_m if is_mm else px_m
-                                span_y = abs(real_ay[j+1]-real_ay[j]) / coord_to_m if is_mm else py_m
-                                c.setFont("Helvetica", 2.5)
-                                c.drawCentredString(cx_d, cy_d - 3, f"{span_x:.1f}×{span_y:.1f}m")
+                    # Axes, poteaux, poutres, dalle labels — same as before but using
+                    # the annotation function for consistency
+                    _draw_coffrage_annotations(
+                        c, dtx, dty, real_ax, real_ay,
+                        pot_s, pp_b, pp_h, ps_b, ps_h, dalle_ep,
+                        px_m, py_m, beton, acier
+                    )
                 else:
-                    # No axes in DWG — create grid fitted to geometry bounds
-                    bounds = _dwg_bounds(lvl_geom)
-                    bx0, by0, bx1, by1 = bounds
+                    # No axes — fitted grid
+                    bx0, by0, bx1, by1 = _dwg_bounds(lvl_geom)
                     bw = bx1 - bx0; bh = by1 - by0
-                    # Divide bounding box into nx × ny grid (in geometry units)
                     gx0 = bx0 + bw * 0.02; gy0 = by0 + bh * 0.02
-                    g_px = (bw * 0.96) / max(nx, 1)  # portée in geometry units
+                    g_px = (bw * 0.96) / max(nx, 1)
                     g_py = (bh * 0.96) / max(ny, 1)
                     _draw_grid_axes_dwg(c, dtx, dty, gx0, gy0, nx, ny, g_px/1000, g_py/1000, bw*0.96, bh*0.96)
                     _draw_poutres_pp_dwg(c, dtx, dty, gx0, gy0, nx, ny, g_px/1000, g_py/1000, pp_b)
                     _draw_poutres_ps_dwg(c, dtx, dty, gx0, gy0, nx, ny, g_px/1000, g_py/1000)
                     _draw_poteaux_dwg(c, dtx, dty, gx0, gy0, nx, ny, g_px/1000, g_py/1000, pot_s, dsc)
-            else:
-                use_dwg = False
+                rendered = True
 
-        if not use_dwg:
-            # Try PDF raster background if archi PDF available
-            if archi_pdf_path:
-                # Use page index matching level (0=RDC or first, 1=R+1, etc.)
-                pdf_page_idx = level_names.index(level_name) if level_name in level_names else 0
-                _render_pdf_background(c, archi_pdf_path, pdf_page_idx, w, h, opacity=0.15)
-
+        # ── MODE 3: PARAMETRIC GRID (no file uploaded) ──
+        if not rendered:
             ox, oy, sc, gw, gh = _grid_layout(w, h, nx, ny, px_m, py_m)
             _draw_grid_axes(c, ox, oy, sc, nx, ny, px_m, py_m, gw, gh)
             _draw_dalle_hatch(c, ox, oy, sc, nx, ny, px_m, py_m)
@@ -965,66 +1202,97 @@ def generer_plans_structure(output_path, resultats=None, params=None, dwg_geomet
     c.drawString(14*mm, h - 17*mm, "FERRAILLAGE DALLE — NIVEAU COURANT")
 
     lvl_geom = dwg_levels.get('Étage courant') or dwg_levels.get('Rez-de-Chaussée')
-    use_dwg_dalle = False
+    has_geom_d = lvl_geom and len(lvl_geom.get('walls', [])) >= 5
+    is_from_pdf_d = False
+    if has_geom_d:
+        bounds_d = _dwg_bounds(lvl_geom)
+        if bounds_d:
+            span_d = max(bounds_d[2] - bounds_d[0], bounds_d[3] - bounds_d[1])
+            is_from_pdf_d = span_d < 5000
+
+    rendered_dalle = False
     real_ax_d = []; real_ay_d = []
-    if lvl_geom and len(lvl_geom.get('walls', [])) >= 5:
-        # Axes already enriched via _ensure_axes during normalization
+    dalle_tx = dalle_ty = None
+
+    # MODE 1: PDF background for ferraillage
+    if archi_pdf_path and (is_from_pdf_d or not has_geom_d):
+        ok, placement = _render_pdf_background(c, archi_pdf_path, 0, w, h, opacity=0.70, dpi=200)
+        if ok and placement and has_geom_d:
+            real_ax_d = lvl_geom.get('axes_x', [])
+            real_ay_d = lvl_geom.get('axes_y', [])
+            if real_ax_d and real_ay_d and placement.get('pdf_h_pt'):
+                dalle_tx, dalle_ty, _ = _pdf_bg_transforms(placement, placement['pdf_h_pt'])
+                # Light axes + columns
+                c.saveState(); c.setStrokeAlpha(0.4)
+                c.setStrokeColor(GRIS4); c.setLineWidth(0.3); c.setDash(4, 2)
+                for ax in real_ax_d:
+                    c.line(dalle_tx(ax), dalle_ty(real_ay_d[0])-5*mm, dalle_tx(ax), dalle_ty(real_ay_d[-1])+5*mm)
+                for ay in real_ay_d:
+                    c.line(dalle_tx(real_ax_d[0])-5*mm, dalle_ty(ay), dalle_tx(real_ax_d[-1])+5*mm, dalle_ty(ay))
+                c.setDash(); c.restoreState()
+                # Small column markers
+                for ax in real_ax_d:
+                    for ay in real_ay_d:
+                        c.setFillColor(NOIR); c.setStrokeColor(NOIR); c.setLineWidth(0.3)
+                        c.rect(dalle_tx(ax)-2.5, dalle_ty(ay)-2.5, 5, 5, fill=1, stroke=1)
+                rendered_dalle = True
+
+    # MODE 2: DWG redraw for ferraillage
+    if not rendered_dalle and has_geom_d and not is_from_pdf_d:
         dtx, dty, dsc, dgw, dgh = _dwg_layout(w, h, lvl_geom)
         if dtx:
             _draw_dwg(c, lvl_geom, dtx, dty, sc=dsc)
             real_ax_d = lvl_geom.get('axes_x', [])
             real_ay_d = lvl_geom.get('axes_y', [])
+            dalle_tx, dalle_ty = dtx, dty
             if real_ax_d and real_ay_d:
-                # Detect coordinate scale
-                ts_d = max(abs(real_ax_d[-1]-real_ax_d[0]), abs(real_ay_d[-1]-real_ay_d[0])) if len(real_ax_d)>1 and len(real_ay_d)>1 else 0
-                is_mm_d = ts_d > 5000
-                # Axes + poteaux aux vraies positions
                 c.setStrokeColor(GRIS4); c.setLineWidth(0.25); c.setDash(4, 2)
                 for ax in real_ax_d:
                     c.line(dtx(ax), dty(real_ay_d[0])-6*mm, dtx(ax), dty(real_ay_d[-1])+6*mm)
                 for ay in real_ay_d:
                     c.line(dtx(real_ax_d[0])-6*mm, dty(ay), dtx(real_ax_d[-1])+6*mm, dty(ay))
                 c.setDash()
-                pt_d = max(pot_s * dsc / (2 if is_mm_d else 600), 3)
+                pt_d = 4  # fixed size column marker
                 for ax in real_ax_d:
                     for ay in real_ay_d:
                         c.setFillColor(NOIR); c.setStrokeColor(NOIR); c.setLineWidth(0.3)
                         c.rect(dtx(ax)-pt_d/2, dty(ay)-pt_d/2, pt_d, pt_d, fill=1, stroke=1)
-                use_dwg_dalle = True
-            else:
-                ox, oy, sc, gw, gh = _grid_layout(w, h, nx, ny, px_m, py_m)
-                _draw_grid_axes(c, ox, oy, sc, nx, ny, px_m, py_m, gw, gh)
-                _draw_poteaux(c, ox, oy, sc, nx, ny, px_m, py_m, pot_s)
+                rendered_dalle = True
 
-    if not use_dwg_dalle and not (real_ax_d and real_ay_d):
+    # MODE 3: Parametric grid
+    if not rendered_dalle:
         ox, oy, sc, gw, gh = _grid_layout(w, h, nx, ny, px_m, py_m)
         _draw_grid_axes(c, ox, oy, sc, nx, ny, px_m, py_m, gw, gh)
         _draw_poteaux(c, ox, oy, sc, nx, ny, px_m, py_m, pot_s)
 
     # Rebar direction arrows in each panel
-    if use_dwg_dalle and real_ax_d and real_ay_d:
+    if rendered_dalle and real_ax_d and real_ay_d and dalle_tx:
         n_rx = len(real_ax_d); n_ry = len(real_ay_d)
         for i in range(n_rx - 1):
             for j in range(n_ry - 1):
-                sx = dtx(real_ax_d[i]) + 2; sy = dty(real_ay_d[j]) + 2
-                sw = dtx(real_ax_d[i+1]) - sx - 2; sh = dty(real_ay_d[j+1]) - sy - 2
+                sx = dalle_tx(real_ax_d[i]) + 2
+                sy_a = min(dalle_ty(real_ay_d[j]), dalle_ty(real_ay_d[j+1])) + 2
+                sw = abs(dalle_tx(real_ax_d[i+1]) - dalle_tx(real_ax_d[i])) - 4
+                sh = abs(dalle_ty(real_ay_d[j+1]) - dalle_ty(real_ay_d[j])) - 4
                 if sw < 5 or sh < 5: continue
-                cx_p = sx + sw/2; cy_p = sy + sh/2
+                cx_p = sx + sw/2; cy_p = sy_a + sh/2
+                c.saveState(); c.setStrokeAlpha(0.5)
                 c.setStrokeColor(ROUGE); c.setLineWidth(0.4)
                 nb_x = max(2, int(sh / 8))
                 for k in range(nb_x):
-                    yb = sy + 3 + k * (sh - 6) / max(nb_x - 1, 1)
+                    yb = sy_a + 3 + k * (sh - 6) / max(nb_x - 1, 1)
                     c.line(sx + 2, yb, sx + sw - 2, yb)
                 c.setStrokeColor(BLEU); c.setLineWidth(0.3)
                 nb_y = max(2, int(sw / 8))
                 for k in range(nb_y):
                     xb = sx + 3 + k * (sw - 6) / max(nb_y - 1, 1)
-                    c.line(xb, sy + 2, xb, sy + sh - 2)
+                    c.line(xb, sy_a + 2, xb, sy_a + sh - 2)
+                c.restoreState()
                 if sw > 10 and sh > 10:
                     c.setFillColor(NOIR); c.setFont("Helvetica", 2.5)
                     c.drawCentredString(cx_p, cy_p + 2, f"As x={dalle.As_x_cm2_ml:.2f}")
                     c.drawCentredString(cx_p, cy_p - 3, f"As y={dalle.As_y_cm2_ml:.2f}")
-    else:
+    elif not rendered_dalle:
         for i in range(nx):
             for j in range(ny):
                 sx = ox + i * px_m * sc; sy = oy + j * py_m * sc
@@ -1061,15 +1329,40 @@ def generer_plans_structure(output_path, resultats=None, params=None, dwg_geomet
     c.drawString(14*mm, h - 17*mm, "PLAN DE FONDATIONS")
 
     lvl_geom = dwg_levels.get('Sous-Sol') or dwg_levels.get('Rez-de-Chaussée')
-    use_dwg_fond = False
+    has_geom_f = lvl_geom and len(lvl_geom.get('walls', [])) >= 5
+    is_from_pdf_f = False
+    if has_geom_f:
+        bounds_f = _dwg_bounds(lvl_geom)
+        if bounds_f:
+            span_f = max(bounds_f[2] - bounds_f[0], bounds_f[3] - bounds_f[1])
+            is_from_pdf_f = span_f < 5000
+
+    rendered_fond = False
     real_ax_f = []; real_ay_f = []
-    if lvl_geom and len(lvl_geom.get('walls', [])) >= 5:
-        # Axes already enriched via _ensure_axes during normalization
+    fond_tx = fond_ty = None
+
+    nb_pieux = getattr(fd, 'nb_pieux', 0)
+    diam_p = getattr(fd, 'diam_pieu_mm', 600)
+    larg_sem = getattr(fd, 'largeur_semelle_m', 1.5)
+
+    # MODE 1: PDF background for fondations
+    if archi_pdf_path and (is_from_pdf_f or not has_geom_f):
+        ok, placement = _render_pdf_background(c, archi_pdf_path, 0, w, h, opacity=0.60, dpi=200)
+        if ok and placement and has_geom_f:
+            real_ax_f = lvl_geom.get('axes_x', [])
+            real_ay_f = lvl_geom.get('axes_y', [])
+            if real_ax_f and real_ay_f and placement.get('pdf_h_pt'):
+                fond_tx, fond_ty, _ = _pdf_bg_transforms(placement, placement['pdf_h_pt'])
+                rendered_fond = True
+
+    # MODE 2: DWG redraw
+    if not rendered_fond and has_geom_f and not is_from_pdf_f:
         dtx, dty, dsc, dgw, dgh = _dwg_layout(w, h, lvl_geom)
         if dtx:
             _draw_dwg(c, lvl_geom, dtx, dty, sc=dsc)
             real_ax_f = lvl_geom.get('axes_x', [])
             real_ay_f = lvl_geom.get('axes_y', [])
+            fond_tx, fond_ty = dtx, dty
             if real_ax_f and real_ay_f:
                 c.setStrokeColor(GRIS4); c.setLineWidth(0.25); c.setDash(4, 2)
                 for ax in real_ax_f:
@@ -1077,34 +1370,42 @@ def generer_plans_structure(output_path, resultats=None, params=None, dwg_geomet
                 for ay in real_ay_f:
                     c.line(dtx(real_ax_f[0])-6*mm, dty(ay), dtx(real_ax_f[-1])+6*mm, dty(ay))
                 c.setDash()
-                use_dwg_fond = True
+                rendered_fond = True
 
-    if not use_dwg_fond:
+    if not rendered_fond:
         ox, oy, sc, gw, gh = _grid_layout(w, h, nx, ny, px_m, py_m)
         _draw_grid_axes(c, ox, oy, sc, nx, ny, px_m, py_m, gw, gh)
 
-    nb_pieux = getattr(fd, 'nb_pieux', 0)
-    diam_p = getattr(fd, 'diam_pieu_mm', 600)
-    larg_sem = getattr(fd, 'largeur_semelle_m', 1.5)
-
-    if use_dwg_fond and real_ax_f and real_ay_f:
-        pr = 5
+    # Draw foundations at axis intersections
+    if rendered_fond and real_ax_f and real_ay_f and fond_tx:
+        pr = 6  # foundation marker size
         for ax in real_ax_f:
             for ay in real_ay_f:
-                px_pt, py_pt = dtx(ax), dty(ay)
-                c.setFillColor(VERT_P); c.setStrokeColor(VERT); c.setLineWidth(0.4)
+                px_pt, py_pt = fond_tx(ax), fond_ty(ay)
+                c.setFillColor(VERT_P); c.setStrokeColor(VERT); c.setLineWidth(0.6)
                 if nb_pieux > 0:
                     c.circle(px_pt, py_pt, pr, fill=1, stroke=1)
                 else:
                     c.rect(px_pt - pr, py_pt - pr, 2*pr, 2*pr, fill=1, stroke=1)
-        # Longrines between semelles
-        c.setStrokeColor(NOIR); c.setLineWidth(0.8)
+        # Longrines between foundations
+        c.setStrokeColor(NOIR); c.setLineWidth(1.0)
         for ay in real_ay_f:
             for i in range(len(real_ax_f)-1):
-                c.line(dtx(real_ax_f[i])+pr, dty(ay), dtx(real_ax_f[i+1])-pr, dty(ay))
+                c.line(fond_tx(real_ax_f[i])+pr, fond_ty(ay), fond_tx(real_ax_f[i+1])-pr, fond_ty(ay))
         for ax in real_ax_f:
             for j in range(len(real_ay_f)-1):
-                c.line(dtx(ax), dty(real_ay_f[j])+pr, dtx(ax), dty(real_ay_f[j+1])-pr)
+                y1_f = fond_ty(real_ay_f[j])
+                y2_f = fond_ty(real_ay_f[j+1])
+                # Handle flipped Y (y1 might be > y2)
+                y_lo_f = min(y1_f, y2_f); y_hi_f = max(y1_f, y2_f)
+                c.line(fond_tx(ax), y_lo_f+pr, fond_tx(ax), y_hi_f-pr)
+        # Axis labels for fondations
+        for i, ax in enumerate(real_ax_f):
+            y_lo = min(fond_ty(real_ay_f[0]), fond_ty(real_ay_f[-1]))
+            _axis_label(c, fond_tx(ax), y_lo - 10*mm, str(i + 1))
+        for j, ay in enumerate(real_ay_f):
+            x_lo = fond_tx(real_ax_f[0]) - 10*mm
+            _axis_label(c, x_lo, fond_ty(ay), chr(65 + (j % 26)))
     else:
         pr = max(min(diam_p * sc / 2000, 8), 3) if nb_pieux else max(larg_sem * sc / 2, 5)
         for i in range(nx + 1):
@@ -1411,9 +1712,44 @@ def generer_plans_mep(output_path, resultats_mep=None, resultats_structure=None,
         c.setFillColor(NOIR); c.setFont("Helvetica-Bold", 12)
         c.drawString(14*mm, h - 17*mm, f"{title} — {level_label}")
 
-        # ── Fond de plan : géométrie DWG de CE niveau ──
+        # ── Fond de plan : 3 modes (PDF background, DWG redraw, parametric grid) ──
+        has_geom_mep = level_geom and len(level_geom.get('walls', [])) >= 5
+        is_from_pdf_mep = False
+        if has_geom_mep:
+            bounds_mep = _dwg_bounds(level_geom)
+            if bounds_mep:
+                span_mep = max(bounds_mep[2] - bounds_mep[0], bounds_mep[3] - bounds_mep[1])
+                is_from_pdf_mep = span_mep < 5000
+
         use_dwg = False
-        if level_geom and len(level_geom.get('walls', [])) >= 5:
+        # Always compute grid layout (needed for fallback bays calculation)
+        ox_g, oy_g, sc_g, gw_g, gh_g = _grid_layout(w, h, nx, ny, px_m, py_m)
+
+        # MODE 1: PDF background (primary for PDF uploads)
+        if archi_pdf_path and (is_from_pdf_mep or not has_geom_mep):
+            pdf_page_idx = min(level_idx_mep, 4)
+            ok_mep, placement_mep = _render_pdf_background(
+                c, archi_pdf_path, pdf_page_idx, w, h, opacity=0.80, dpi=200
+            )
+            if ok_mep and placement_mep and has_geom_mep and placement_mep.get('pdf_h_pt'):
+                mep_tx, mep_ty, mep_sc = _pdf_bg_transforms(
+                    placement_mep, placement_mep['pdf_h_pt']
+                )
+                tx, ty = mep_tx, mep_ty
+                bounds = _dwg_bounds(level_geom)
+                ox = tx(bounds[0]); oy = ty(bounds[1])
+                gw = abs(tx(bounds[2]) - tx(bounds[0]))
+                gh = abs(ty(bounds[3]) - ty(bounds[1]))
+                use_dwg = True  # use_dwg means "we have room-aware geometry"
+            else:
+                ox, oy, gw, gh = ox_g, oy_g, gw_g, gh_g
+                c.saveState(); c.setStrokeAlpha(0.4); c.setFillAlpha(0.5)
+                _draw_grid_axes(c, ox, oy, sc_g, nx, ny, px_m, py_m, gw, gh)
+                _draw_poteaux(c, ox, oy, sc_g, nx, ny, px_m, py_m, pot_s)
+                c.restoreState()
+
+        # MODE 2: DWG redraw (for actual DWG/DXF uploads)
+        elif has_geom_mep and not is_from_pdf_mep:
             dwg_tx, dwg_ty, dwg_sc, dwg_gw, dwg_gh = _dwg_layout(w, h, level_geom)
             if dwg_tx:
                 _draw_dwg(c, level_geom, dwg_tx, dwg_ty, light=True, sc=dwg_sc)
@@ -1422,14 +1758,13 @@ def generer_plans_mep(output_path, resultats_mep=None, resultats_structure=None,
                 ox = tx(bounds[0]); oy = ty(bounds[1])
                 gw = dwg_gw; gh = dwg_gh
                 use_dwg = True
+            else:
+                ox, oy, gw, gh = ox_g, oy_g, gw_g, gh_g
+                _draw_grid_axes(c, ox, oy, sc_g, nx, ny, px_m, py_m, gw, gh)
+                _draw_poteaux(c, ox, oy, sc_g, nx, ny, px_m, py_m, pot_s)
 
-        # Always compute grid layout (needed for fallback bays calculation)
-        ox_g, oy_g, sc_g, gw_g, gh_g = _grid_layout(w, h, nx, ny, px_m, py_m)
-        if not use_dwg:
-            # Try PDF raster background if archi PDF available
-            if archi_pdf_path:
-                pdf_page_idx = min(level_idx_mep, 4)  # cap at page 5
-                _render_pdf_background(c, archi_pdf_path, pdf_page_idx, w, h, opacity=0.12)
+        # MODE 3: Parametric grid
+        else:
             ox, oy, gw, gh = ox_g, oy_g, gw_g, gh_g
             _draw_grid_axes(c, ox, oy, sc_g, nx, ny, px_m, py_m, gw, gh)
             _draw_poteaux(c, ox, oy, sc_g, nx, ny, px_m, py_m, pot_s)
