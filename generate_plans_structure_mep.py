@@ -461,8 +461,8 @@ def _draw_dwg(c, dwg, tx, ty, light=False, sc=None):
 
     # ── Murs ──
     if light:
-        # MEP background: light single lines
-        c.setStrokeColor(colors.HexColor("#BBBBBB")); c.setLineWidth(0.4)
+        # MEP background: visible but not dominating
+        c.setStrokeColor(colors.HexColor("#999999")); c.setLineWidth(0.6)
         for item in dwg.get('walls', []):
             if item['type'] == 'line':
                 c.line(tx(item['start'][0]), ty(item['start'][1]),
@@ -519,17 +519,17 @@ def _draw_dwg(c, dwg, tx, ty, light=False, sc=None):
 
     # ── Labels pièces ──
     if not light:
-        c.setFillColor(GRIS2); c.setFont("Helvetica", 4.5)
+        c.setFillColor(colors.HexColor("#333333")); c.setFont("Helvetica-Bold", 5.5)
         for r in dwg.get('rooms', []):
             name = r.get('name', '')
-            if name and not re.match(r'^\d', name):
+            if name and len(name) >= 2:
                 c.drawCentredString(tx(r['x']), ty(r['y']), name[:25])
     else:
-        # Even in light mode, show room names very faintly
-        c.setFillColor(colors.HexColor("#AAAAAA")); c.setFont("Helvetica", 3)
+        # Light mode: show room names more visible for MEP context
+        c.setFillColor(colors.HexColor("#777777")); c.setFont("Helvetica", 4.5)
         for r in dwg.get('rooms', []):
             name = r.get('name', '')
-            if name and not re.match(r'^\d', name):
+            if name and len(name) >= 2:
                 c.drawCentredString(tx(r['x']), ty(r['y']), name[:20])
 
 
@@ -590,31 +590,34 @@ def _draw_coffrage_annotations(c, tx, ty, axes_x, axes_y, pot_s, pp_b, pp_h,
         _axis_label(c, x_lo - 5*mm, ty(ay), chr(65 + (j % 26)))
         _axis_label(c, x_hi + 5*mm, ty(ay), chr(65 + (j % 26)))
 
-    # ── Dimension labels between axes ──
-    c.setFillColor(GRIS2); c.setFont("Helvetica", 5)
+    # ── Dimension labels between axes — use actual axis spacing when in mm ──
+    c.setFillColor(GRIS2); c.setFont("Helvetica", 6)
     for i in range(len(axes_x) - 1):
-        span_m = px_m  # use project portée (PDF coords don't convert to meters reliably)
+        real_span = abs(axes_x[i+1] - axes_x[i])
+        # If coords are in mm (> 500), convert to m; otherwise use project param
+        span_m = real_span / 1000.0 if real_span > 500 else px_m
         mid_x = (tx(axes_x[i]) + tx(axes_x[i+1])) / 2
         c.drawCentredString(mid_x, y_lo - 12*mm, f"{span_m:.2f}m")
     for j in range(len(axes_y) - 1):
-        span_m = py_m
+        real_span = abs(axes_y[j+1] - axes_y[j])
+        span_m = real_span / 1000.0 if real_span > 500 else py_m
         mid_y = (ty(axes_y[j]) + ty(axes_y[j+1])) / 2
         c.saveState()
         c.translate(x_lo - 12*mm, mid_y); c.rotate(90)
         c.drawCentredString(0, 0, f"{span_m:.2f}m")
         c.restoreState()
 
-    # ── Poteaux (columns) — small red-outlined squares at intersections ──
-    pt_d = 6  # fixed 6pt column marker — visible but not dominating
+    # ── Poteaux (columns) — red-outlined squares at intersections ──
+    pt_d = 10  # scaled column marker — visible on A3
     for ax in axes_x:
         for ay in axes_y:
             px, py = tx(ax), ty(ay)
             c.setFillColor(colors.HexColor("#FFCCCC"))  # light red fill
-            c.setStrokeColor(ROUGE); c.setLineWidth(0.6)
+            c.setStrokeColor(ROUGE); c.setLineWidth(0.8)
             c.rect(px - pt_d/2, py - pt_d/2, pt_d, pt_d, fill=1, stroke=1)
-            # Label — tiny section text
-            c.setFillColor(ROUGE); c.setFont("Helvetica-Bold", 2.5)
-            c.drawCentredString(px, py - 1, f"{pot_s}")
+            # Column section label
+            c.setFillColor(ROUGE); c.setFont("Helvetica-Bold", 4)
+            c.drawCentredString(px, py - 1.5, f"{pot_s}")
 
     # ── Poutres principales (main beams) — semi-transparent thick lines ──
     c.saveState()
@@ -627,9 +630,9 @@ def _draw_coffrage_annotations(c, tx, ty, axes_x, axes_y, pot_s, pp_b, pp_h,
     c.restoreState()
     # Label PP on first span
     if len(axes_x) >= 2 and len(axes_y) >= 1:
-        c.setFillColor(ROUGE); c.setFont("Helvetica-Bold", 4)
+        c.setFillColor(ROUGE); c.setFont("Helvetica-Bold", 5.5)
         mid_x = (tx(axes_x[0]) + tx(axes_x[1])) / 2
-        c.drawCentredString(mid_x, ty(axes_y[0]) + 5, f"PP {pp_b}×{pp_h}")
+        c.drawCentredString(mid_x, ty(axes_y[0]) + 7, f"PP {pp_b}×{pp_h}")
 
     # ── Poutres secondaires — thinner semi-transparent ──
     c.saveState()
@@ -642,7 +645,7 @@ def _draw_coffrage_annotations(c, tx, ty, axes_x, axes_y, pot_s, pp_b, pp_h,
     c.restoreState()
 
     # ── Dalle labels — section in large panels ──
-    c.setFont("Helvetica", 4); c.setFillColor(GRIS2)
+    c.setFont("Helvetica", 5); c.setFillColor(GRIS2)
     for i in range(len(axes_x) - 1):
         for j in range(len(axes_y) - 1):
             cx = (tx(axes_x[i]) + tx(axes_x[i+1])) / 2
@@ -650,10 +653,15 @@ def _draw_coffrage_annotations(c, tx, ty, axes_x, axes_y, pot_s, pp_b, pp_h,
             sw = abs(tx(axes_x[i+1]) - tx(axes_x[i]))
             sh = abs(ty(axes_y[j+1]) - ty(axes_y[j]))
             if sw > 20 and sh > 20:
-                c.drawCentredString(cx, cy + 3, f"Dalle ep.{dalle_ep}")
-                c.setFont("Helvetica", 3)
-                c.drawCentredString(cx, cy - 4, f"{px_m:.1f}×{py_m:.1f}m")
+                # Compute actual panel dimensions
+                real_dx = abs(axes_x[i+1] - axes_x[i])
+                real_dy = abs(axes_y[j+1] - axes_y[j])
+                pdx_m = real_dx / 1000.0 if real_dx > 500 else px_m
+                pdy_m = real_dy / 1000.0 if real_dy > 500 else py_m
+                c.drawCentredString(cx, cy + 4, f"Dalle ep.{dalle_ep}")
                 c.setFont("Helvetica", 4)
+                c.drawCentredString(cx, cy - 5, f"{pdx_m:.1f}×{pdy_m:.1f}m")
+                c.setFont("Helvetica", 5)
 
     # ── Light diagonal hatch for slab panels ──
     c.saveState()

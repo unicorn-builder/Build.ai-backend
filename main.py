@@ -863,14 +863,26 @@ def _extract_dxf_geometry(filepath: str) -> dict:
             _add_entity(e, geometry['doors'])
         elif layer in sanitary_layers:
             _add_entity(e, geometry['sanitary'])
-        elif layer == 'Etiquettes de pièces' and e.dxftype() in ('TEXT', 'MTEXT'):
-            try:
-                txt = e.text if e.dxftype() == 'MTEXT' else e.dxf.text
-                txt = re.sub(r'\\[^;]*;', '', txt).strip()
-                pos = e.dxf.insert
-                geometry['rooms'].append({'name': txt, 'x': round(pos.x, 1), 'y': round(pos.y, 1)})
-            except Exception:
-                pass
+        # Room labels: scan many possible layer names (French + English + generic)
+        elif e.dxftype() in ('TEXT', 'MTEXT'):
+            room_label_layers = {
+                'etiquettes de pièces', 'etiquettes de pieces', 'etiquettes',
+                'room', 'rooms', 'room labels', 'room_labels', 'a-room',
+                'a-room-name', 'a-room-iden', 'a-anno-room', 'pièces', 'pieces',
+                'text', 'texte', 'textes', 'labels', 'a-area', 'a-area-iden',
+                'annotation', 'annotations', 'a-anno', 'a-text',
+                'noms', 'noms de pièces', 'noms_pieces',
+            }
+            layer_low = layer.lower().strip()
+            if layer_low in room_label_layers or 'room' in layer_low or 'pièce' in layer_low or 'piece' in layer_low or 'etiquette' in layer_low:
+                try:
+                    txt = e.text if e.dxftype() == 'MTEXT' else e.dxf.text
+                    txt = re.sub(r'\\[^;]*;', '', txt).strip()
+                    if txt and len(txt) >= 2 and len(txt) <= 50:
+                        pos = e.dxf.insert
+                        geometry['rooms'].append({'name': txt, 'x': round(pos.x, 1), 'y': round(pos.y, 1)})
+                except Exception:
+                    pass
 
     # Extract structural axes from dedicated layers
     axis_layers = {'AXES', 'A-AXES', 'GRILLE', 'S-GRID', 'GRID', 'AXE', 'STRUCTURE_AXES'}
@@ -903,7 +915,211 @@ def _extract_dxf_geometry(filepath: str) -> dict:
     geometry['axes_x'] = sorted(list(axes_x_set))
     geometry['axes_y'] = sorted(list(axes_y_set))
 
+    # If no rooms detected from labels, infer from wall topology
+    if not geometry['rooms'] and len(geometry['walls']) >= 10:
+        inferred = _infer_rooms_from_walls(geometry)
+        if inferred:
+            geometry['rooms'] = inferred
+            logger.info(f"Inferred {len(inferred)} rooms from wall topology")
+
     return geometry if len(geometry['walls']) > 5 else None
+
+
+def _infer_rooms_from_walls(geom: dict) -> list:
+    """Infer rooms from wall geometry using rasterization + contour detection.
+
+    Rasterizes walls onto a binary grid, finds enclosed contour regions,
+    then classifies rooms by area (small=wet, medium=bedroom, large=living).
+    Returns list of {'name': str, 'x': float, 'y': float} in model-space coords.
+    """
+    try:
+        import numpy as np
+    except ImportError:
+        return []
+
+    walls = geom.get('walls', [])
+    if len(walls) < 10:
+        return []
+
+    # Collect all wall endpoints to find bounds
+    pts = []
+    for w in walls:
+        if w.get('type') == 'line':
+            pts.append(w['start'])
+            pts.append(w['end'])
+        elif w.get('type') == 'polyline':
+            pts.extend(w.get('points', []))
+    if len(pts) < 4:
+        return []
+
+    xs = [p[0] for p in pts]
+    ys = [p[1] for p in pts]
+    xmin, xmax = min(xs), max(xs)
+    ymin, ymax = min(ys), max(ys)
+    w_range = xmax - xmin
+    h_range = ymax - ymin
+    if w_range < 100 or h_range < 100:
+        return []
+
+    # Rasterize at ~100mm per pixel (enough for room detection, fast)
+    CELL = 100.0  # mm per pixel
+    img_w = int(w_range / CELL) + 2
+    img_h = int(h_range / CELL) + 2
+    # Cap image size to avoid memory issues
+    if img_w > 2000 or img_h > 2000:
+        CELL = max(w_range, h_range) / 1500.0
+        img_w = int(w_range / CELL) + 2
+        img_h = int(h_range / CELL) + 2
+
+    grid = np.zeros((img_h, img_w), dtype=np.uint8)
+
+    def to_px(x, y):
+        px = int((x - xmin) / CELL)
+        py = int((y - ymin) / CELL)
+        return max(0, min(px, img_w - 1)), max(0, min(py, img_h - 1))
+
+    # Draw walls on grid using Bresenham-like line rasterization
+    def draw_line(x1, y1, x2, y2):
+        px1, py1 = to_px(x1, y1)
+        px2, py2 = to_px(x2, y2)
+        # Simple DDA line drawing with wall thickness = 2px
+        steps = max(abs(px2 - px1), abs(py2 - py1), 1)
+        for i in range(steps + 1):
+            t = i / steps
+            cx = int(px1 + t * (px2 - px1))
+            cy = int(py1 + t * (py2 - py1))
+            for dx in range(-1, 2):
+                for dy in range(-1, 2):
+                    nx, ny = cx + dx, cy + dy
+                    if 0 <= nx < img_w and 0 <= ny < img_h:
+                        grid[ny, nx] = 255
+
+    for w in walls:
+        if w.get('type') == 'line':
+            draw_line(w['start'][0], w['start'][1], w['end'][0], w['end'][1])
+        elif w.get('type') == 'polyline':
+            wpts = w.get('points', [])
+            for i in range(len(wpts) - 1):
+                draw_line(wpts[i][0], wpts[i][1], wpts[i + 1][0], wpts[i + 1][1])
+            if w.get('closed') and len(wpts) >= 3:
+                draw_line(wpts[-1][0], wpts[-1][1], wpts[0][0], wpts[0][1])
+
+    # Flood-fill from border to mark exterior
+    exterior = np.zeros_like(grid)
+    # Use simple scanline flood fill from all border pixels
+    from collections import deque
+    queue = deque()
+    for x in range(img_w):
+        if grid[0, x] == 0 and exterior[0, x] == 0:
+            queue.append((x, 0))
+            exterior[0, x] = 1
+        if grid[img_h - 1, x] == 0 and exterior[img_h - 1, x] == 0:
+            queue.append((x, img_h - 1))
+            exterior[img_h - 1, x] = 1
+    for y in range(img_h):
+        if grid[y, 0] == 0 and exterior[y, 0] == 0:
+            queue.append((0, y))
+            exterior[y, 0] = 1
+        if grid[y, img_w - 1] == 0 and exterior[y, img_w - 1] == 0:
+            queue.append((img_w - 1, y))
+            exterior[y, img_w - 1] = 1
+
+    while queue:
+        cx, cy = queue.popleft()
+        for dx, dy in [(1, 0), (-1, 0), (0, 1), (0, -1)]:
+            nx, ny = cx + dx, cy + dy
+            if 0 <= nx < img_w and 0 <= ny < img_h and grid[ny, nx] == 0 and exterior[ny, nx] == 0:
+                exterior[ny, nx] = 1
+                queue.append((nx, ny))
+
+    # Interior pixels = not wall and not exterior
+    interior = (grid == 0) & (exterior == 0)
+
+    # Connected component labeling on interior pixels
+    labels = np.zeros_like(grid, dtype=np.int32)
+    label_id = 0
+    regions = []  # (label_id, pixel_count, sum_x, sum_y)
+
+    for y in range(img_h):
+        for x in range(img_w):
+            if interior[y, x] and labels[y, x] == 0:
+                label_id += 1
+                # BFS to label this region
+                rq = deque()
+                rq.append((x, y))
+                labels[y, x] = label_id
+                count = 0
+                sx, sy = 0.0, 0.0
+                while rq:
+                    rx, ry = rq.popleft()
+                    count += 1
+                    sx += rx
+                    sy += ry
+                    for ddx, ddy in [(1, 0), (-1, 0), (0, 1), (0, -1)]:
+                        nnx, nny = rx + ddx, ry + ddy
+                        if 0 <= nnx < img_w and 0 <= nny < img_h and interior[nny, nnx] and labels[nny, nnx] == 0:
+                            labels[nny, nnx] = label_id
+                            rq.append((nnx, nny))
+                if count >= 5:  # Minimum 5 pixels (~0.5m² at 100mm/px)
+                    regions.append((label_id, count, sx / count, sy / count))
+
+    if not regions:
+        return []
+
+    # Sort by area descending, take top 50 max
+    regions.sort(key=lambda r: r[1], reverse=True)
+    regions = regions[:50]
+
+    # Classify rooms by area and assign names
+    rooms = []
+    # Area thresholds in pixels (at CELL mm/px):
+    # 1 pixel = CELL² mm² → area_mm2 = count * CELL²
+    # Wet room: 2-8 m² → 20000-80000 mm² → 2-8 pixels at 100mm/px
+    # Actually at 100mm/px, 1px = 0.01m², so 2m² = 200px, 8m² = 800px
+    px_per_m2 = (1000 / CELL) ** 2  # pixels per m²
+    wet_count = 0
+    bed_count = 0
+    living_count = 0
+    service_count = 0
+    other_count = 0
+
+    for lid, count, cx, cy in regions:
+        area_m2 = count / px_per_m2
+        # Convert centroid back to model-space
+        mx = round(xmin + cx * CELL, 1)
+        my = round(ymin + cy * CELL, 1)
+
+        if area_m2 < 1.5:
+            continue  # Too small, likely artifact
+        elif area_m2 < 5:
+            wet_count += 1
+            name = f"SDB {wet_count}" if wet_count % 2 == 1 else f"WC {wet_count // 2}"
+        elif area_m2 < 10:
+            bed_count += 1
+            name = f"Chambre {bed_count}"
+        elif area_m2 < 25:
+            living_count += 1
+            if living_count == 1:
+                name = "Salon/Séjour"
+            elif living_count == 2:
+                name = "Cuisine"
+            else:
+                name = f"Pièce {living_count}"
+        elif area_m2 < 50:
+            service_count += 1
+            if service_count == 1:
+                name = "Hall"
+            else:
+                name = f"Palier {service_count}"
+        else:
+            other_count += 1
+            name = f"Espace {other_count}"
+
+        rooms.append({'name': name, 'x': mx, 'y': my})
+
+    logger.info(f"Room inference: {len(rooms)} rooms from {len(walls)} walls "
+                f"(grid {img_w}x{img_h}, CELL={CELL}mm, {len(regions)} regions)")
+    return rooms
 
 
 @app.post("/parse-sol")
