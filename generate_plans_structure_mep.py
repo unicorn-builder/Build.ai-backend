@@ -2065,11 +2065,22 @@ def generer_plans_mep(output_path, resultats_mep=None, resultats_structure=None,
 
         else:
             # MODE GRILLE : distribution dans les travées
+            # When DWG geometry is drawn (use_dwg=True) but no rooms detected,
+            # compute bays to fit within the actual building footprint (gw, gh)
+            # instead of using sc_g which is the parametric grid scale.
             cx_noy = ox + gw/2; cy_noy = oy + gh/2
             bays = []
-            for i in range(nx):
-                for j in range(ny):
-                    bays.append((ox + (i+0.5)*px_m*sc_g, oy + (j+0.5)*py_m*sc_g))
+            if use_dwg and gw > 0 and gh > 0:
+                # Distribute bays evenly within the DWG geometry bounds
+                bay_dx = gw / max(nx, 1)
+                bay_dy = gh / max(ny, 1)
+                for i in range(nx):
+                    for j in range(ny):
+                        bays.append((ox + (i + 0.5) * bay_dx, oy + (j + 0.5) * bay_dy))
+            else:
+                for i in range(nx):
+                    for j in range(ny):
+                        bays.append((ox + (i+0.5)*px_m*sc_g, oy + (j+0.5)*py_m*sc_g))
 
             if key == "plb_ef":
                 c.setFillColor(BLEU); c.setStrokeColor(NOIR); c.setLineWidth(0.6)
