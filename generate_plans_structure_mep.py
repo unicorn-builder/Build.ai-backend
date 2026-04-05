@@ -1272,6 +1272,7 @@ def _draw_rebar_nomenclature(c, x, y, dalle, nx, ny, px_m, py_m):
     ]))
 
     # Draw the table
+    table.wrapOn(c, 100*mm, 40*mm)
     table.drawOn(c, x, y - 30*mm)
 
 
@@ -1356,6 +1357,7 @@ def _draw_column_schedule(c, x, y, poteaux, nx, ny, px_m, py_m):
     ]))
 
     # Draw the table
+    table.wrapOn(c, 120*mm, 30*mm)
     table.drawOn(c, x, y - 20*mm)
 
 
