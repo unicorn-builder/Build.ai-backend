@@ -1240,8 +1240,8 @@ def _draw_rebar_nomenclature(c, x, y, dalle, nx, ny, px_m, py_m):
     from reportlab.platypus import Table, TableStyle
     from reportlab.lib import colors as rl_colors
 
-    diam_x, esp_x = _estimate_bar_from_as(dalle.As_x_cm2_ml)
-    diam_y, esp_y = _estimate_bar_from_as(dalle.As_y_cm2_ml)
+    diam_x, esp_x, _ = _estimate_bar_from_as(dalle.As_x_cm2_ml)
+    diam_y, esp_y, _ = _estimate_bar_from_as(dalle.As_y_cm2_ml)
 
     # Compute number of bars (approximation)
     # nb = (portée_m * 1000) / espacement_cm
