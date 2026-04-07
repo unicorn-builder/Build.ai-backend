@@ -1366,6 +1366,30 @@ async def generate_boq_mep(params: ParamsProjet):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/generate-edge-assessment")
+async def generate_edge_assessment(params: ParamsProjet):
+    """
+    EDGE Assessment officiel (IFC EDGE v3.0.0) — PDF calqué sur le layout
+    de la plateforme app.edgebuildings.com, calculs 100% locaux Tijan AI.
+    """
+    try:
+        _, _, calculer_structure = get_moteur_structure()
+        calculer_mep = get_moteur_mep()
+        donnees = params_to_donnees(params)
+        rs = calculer_structure(donnees)
+        rm = calculer_mep(donnees, rs)
+        set_pdf_lang(getattr(params, 'lang', 'fr'))
+        set_pdf_devise(get_devise_info(params.ville))
+
+        from gen_edge_assessment import generer_edge_assessment
+        pdf_bytes = generer_edge_assessment(rm, params.dict())
+        gc.collect()
+        return pdf_response(pdf_bytes, fname(params, "edge_assessment"))
+    except Exception as e:
+        logger.error(f"/generate-edge-assessment error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/generate-boq-xlsx")
 async def generate_boq_xlsx(params: ParamsProjet):
     """BOQ Structure as Excel (.xlsx)."""
