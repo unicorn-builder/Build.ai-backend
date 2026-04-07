@@ -12,9 +12,12 @@ from reportlab.lib.units import mm
 from reportlab.lib import colors
 from reportlab.platypus import (SimpleDocTemplate, Paragraph, Table, Spacer,
                                 PageBreak, HRFlowable)
-from tijan_theme import (NAVY, VERT, VERT_LIGHT, GRIS1, GRIS2, GRIS3,
+from tijan_theme import (BLEU, VERT, VERT_LIGHT, GRIS1, GRIS2, GRIS3,
                          ML, MR, CW, W, S, HeaderFooter, p, fmt_n,
                          section_title, table_style)
+
+# Alias EDGE/IFC navy = bleu Tijan
+NAVY = BLEU
 
 
 # ══════════════════════════════════════════════════════════════
