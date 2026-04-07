@@ -11,7 +11,7 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
 from reportlab.lib import colors
 from reportlab.platypus import (SimpleDocTemplate, Paragraph, Spacer,
-                                Table, TableStyle, PageBreak)
+                                Table, TableStyle, PageBreak, KeepTogether)
 from reportlab.graphics.shapes import (Drawing, Rect, Circle, Line, String,
                                         Group, Polygon, PolyLine)
 
@@ -31,7 +31,7 @@ def _T(fr, en):
 PAD       = 10 * mm
 H_TITLE   = 12 * mm
 CONTENT_W = 178   # mm — largeur utile interne
-CONTENT_H = 128   # mm — hauteur utile interne
+CONTENT_H = 118   # mm — hauteur utile interne (laisse de la marge pour caption)
 
 # 4 colonnes parfaitement alignees, largeur node = 38 mm
 #   col x  +  w(38) reste <= CONTENT_W (178)
@@ -711,12 +711,14 @@ def _t_gtb(rm):
 # ─────────────────────────────────────────────────────────────────────
 def _section(story, num, title_fr, title_en, table, drawing,
              caption_fr, caption_en, last=False):
-    story.extend(section_title(num, _T(title_fr, title_en)))
-    story.append(table)
-    story.append(Spacer(1, 3 * mm))
-    story.append(drawing)
-    story.append(Spacer(1, 2 * mm))
-    story.append(Paragraph(_T(caption_fr, caption_en), S['body_j']))
+    block = []
+    block.extend(section_title(num, _T(title_fr, title_en)))
+    block.append(table)
+    block.append(Spacer(1, 2 * mm))
+    block.append(Paragraph(_T(caption_fr, caption_en), S['body_j']))
+    block.append(Spacer(1, 2 * mm))
+    block.append(drawing)
+    story.append(KeepTogether(block))
     if not last:
         story.append(PageBreak())
 
