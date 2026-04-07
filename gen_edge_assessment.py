@@ -10,10 +10,12 @@ from datetime import datetime
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
 from reportlab.lib import colors
-from reportlab.platypus import (SimpleDocTemplate, Paragraph, Table, Spacer,
-                                PageBreak, HRFlowable)
-from tijan_theme import (BLEU, VERT, VERT_LIGHT, GRIS1, GRIS2, GRIS3,
-                         ML, MR, CW, W, S, HeaderFooter, p, fmt_n,
+from reportlab.platypus import (SimpleDocTemplate, Paragraph, Table, TableStyle,
+                                Spacer, PageBreak, HRFlowable)
+from reportlab.lib.styles import ParagraphStyle
+from tijan_theme import (BLEU, VERT, VERT_LIGHT, ORANGE, ORANGE_LT,
+                         GRIS1, GRIS2, GRIS3,
+                         ML, MR, CW, W, S, HeaderFooter, p, fmt_n, fmt_fcfa,
                          section_title, table_style)
 
 # Alias EDGE/IFC navy = bleu Tijan
@@ -490,6 +492,147 @@ def _edge_savings_summary(story, rm):
 
 
 # ══════════════════════════════════════════════════════════════
+# SECTIONS FUSIONNÉES DEPUIS gen_mep.generer_edge (Conformité EDGE)
+# ══════════════════════════════════════════════════════════════
+
+def _verdict_banner(story, rm):
+    """Bandeau coloré CERTIFIABLE / NON CERTIFIABLE en tête de rapport."""
+    e = rm.edge
+    verdict_color = VERT if e.certifiable else ORANGE
+    bg_color = VERT_LIGHT if e.certifiable else ORANGE_LT
+    verdict_txt = (f'CERTIFIABLE — {e.niveau_certification}' if e.certifiable
+                   else f'NON CERTIFIABLE — {e.niveau_certification}')
+    style = ParagraphStyle('v', fontName='Helvetica-Bold', fontSize=11,
+                           textColor=verdict_color)
+    verd = Table([[Paragraph(f'RÉSULTAT : {verdict_txt}', style)]],
+                 colWidths=[CW])
+    verd.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, -1), bg_color),
+        ('BOX', (0, 0), (-1, -1), 1.5, verdict_color),
+        ('TOPPADDING', (0, 0), (-1, -1), 8),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+        ('LEFTPADDING', (0, 0), (-1, -1), 12),
+    ]))
+    story.append(verd)
+    if getattr(e, 'note_generale', None):
+        story.append(Paragraph(e.note_generale, S['small']))
+    story.append(Spacer(1, 3*mm))
+
+
+def _scores_synthesis(story, rm):
+    """Tableau synthèse des 3 piliers avec statut CONFORME / DÉFICIT."""
+    e = rm.edge
+    story += section_title('A', 'SYNTHÈSE DES SCORES EDGE')
+    rows = [[p('PILIER', 'th'), p('SCORE PROJET', 'th'),
+             p('SEUIL CIBLE', 'th'), p('STATUT', 'th')]]
+    for label, val in [('Énergie', e.economie_energie_pct),
+                       ('Eau', e.economie_eau_pct),
+                       ('Matériaux', e.economie_materiaux_pct)]:
+        ok = val >= 20
+        statut = ('✓ CONFORME' if ok
+                  else f'✗ DÉFICIT {20 - val:.1f}%')
+        rows.append([
+            p(label),
+            p(f'{val:.1f}%', 'td_r'),
+            p('20%', 'td_r'),
+            p(statut, 'ok' if ok else 'nok'),
+        ])
+    t = Table(rows, colWidths=[CW*0.30, CW*0.20, CW*0.20, CW*0.30],
+              repeatRows=1)
+    t.setStyle(table_style(zebra=False))
+    story.append(t)
+    if getattr(e, 'methode_calcul', None):
+        story.append(Paragraph(f'Méthode : {e.methode_calcul}', S['small']))
+    story.append(Spacer(1, 3*mm))
+
+
+def _measures_detail(story, rm):
+    """Détail mesures par pilier avec gain %, statut, impact prix."""
+    e = rm.edge
+    piliers = [
+        ('ÉNERGIE',    'PILIER 1 — ÉNERGIE',
+         getattr(e, 'mesures_energie', []),
+         e.base_energie_kwh_m2_an, e.projet_energie_kwh_m2_an, 'kWh/m²/an'),
+        ('EAU',        'PILIER 2 — EAU',
+         getattr(e, 'mesures_eau', []),
+         e.base_eau_L_pers_j, e.projet_eau_L_pers_j, 'L/pers/j'),
+        ('MATÉRIAUX',  'PILIER 3 — MATÉRIAUX',
+         getattr(e, 'mesures_materiaux', []),
+         e.base_ei_kwh_m2, e.projet_ei_kwh_m2, 'kWh/m²'),
+    ]
+    for i, (key, titre, mesures, base, projet, unite) in enumerate(piliers):
+        if i == 0:
+            story.append(PageBreak())
+        else:
+            story.append(Spacer(1, 4*mm))
+        story += section_title('', titre)
+        story.append(Paragraph(
+            f'Référence bâtiment standard : {base:.0f} {unite} | '
+            f'Projet : {projet:.0f} {unite}',
+            S['body']))
+        story.append(Spacer(1, 2*mm))
+        if not mesures:
+            story.append(Paragraph('— Aucune mesure détaillée —', S['small']))
+            continue
+        m_data = [[p(h, 'th') for h in
+                   ['MESURE', 'GAIN (%)', 'STATUT', 'IMPACT PRIX']]]
+        for m in mesures:
+            gain = m.get('gain_pct', 0)
+            statut = m.get('statut', '—')
+            est_integre = 'Intégré' in statut or 'standard' in statut
+            m_data.append([
+                p(m.get('mesure', '—')),
+                p(f'+{gain}%', 'td_g_r' if est_integre else 'td_r'),
+                p(statut,
+                  'td_g' if est_integre
+                  else 'td_o' if 'spécifier' in statut.lower()
+                  else 'td'),
+                p(m.get('impact_prix', '—'), 'small'),
+            ])
+        tm = Table(m_data, colWidths=[CW*0.32, CW*0.10, CW*0.28, CW*0.30],
+                   repeatRows=1)
+        tm.setStyle(table_style())
+        story.append(tm)
+
+
+def _plan_action(story, rm):
+    """Plan d'action d'optimisation vers certification (si non-certifiable)."""
+    e = rm.edge
+    if getattr(e, 'certifiable', True) or not getattr(e, 'plan_action', None):
+        return
+    story.append(PageBreak())
+    story += section_title('B', "PLAN D'ACTION — OPTIMISATION VERS CERTIFICATION")
+    story.append(Paragraph(
+        f'Coût total de mise en conformité estimé : '
+        f'{fmt_fcfa(getattr(e, "cout_mise_conformite_fcfa", 0))} | '
+        f'ROI estimé : {getattr(e, "roi_ans", 0)} ans',
+        S['note']))
+    story.append(Spacer(1, 2*mm))
+    pa_data = [[p(h, 'th') for h in
+                ['PILIER', 'ACTION', 'GAIN (%)', 'COÛT', 'ROI', 'IMPACT']]]
+    for action in e.plan_action:
+        cout = action.get('cout_fcfa', 0)
+        roi = action.get('roi_ans', 0)
+        pa_data.append([
+            p(action.get('pilier', '—'), 'td_b'),
+            p(action.get('action', '—')),
+            p(f'+{action.get("gain_pct", 0):.1f}%', 'td_g_r'),
+            p(fmt_fcfa(cout) if cout > 0 else '—', 'td_r'),
+            p(f'{roi:.1f} ans' if roi > 0 else '—', 'td_r'),
+            p(action.get('impact', '—'), 'small'),
+        ])
+    tpa = Table(pa_data,
+                colWidths=[CW*w for w in [0.10, 0.30, 0.09, 0.13, 0.09, 0.29]],
+                repeatRows=1)
+    tpa.setStyle(table_style())
+    story.append(tpa)
+    story.append(Paragraph(
+        '⚠ Simulation des modifications nécessaires et de leur impact '
+        'sur le coût du projet pour atteindre la certification EDGE.',
+        S['note']))
+
+
+# ══════════════════════════════════════════════════════════════
 # ENTRY POINT
 # ══════════════════════════════════════════════════════════════
 
@@ -514,6 +657,8 @@ def generer_edge_assessment(rm, params: dict) -> bytes:
     story = []
     total_area = rm.surf_batie_m2
 
+    _verdict_banner(story, rm)
+    _scores_synthesis(story, rm)
     _project_details(story, rm, params, total_area)
     _subproject_details(story, rm, params)
     story.append(PageBreak())
@@ -528,6 +673,8 @@ def generer_edge_assessment(rm, params: dict) -> bytes:
     _fuel_and_costs(story, rm, params)
     _climate_data(story, rm, params)
     _edge_savings_summary(story, rm)
+    _measures_detail(story, rm)
+    _plan_action(story, rm)
 
     doc.build(story, onFirstPage=hf, onLaterPages=hf)
     return buf.getvalue()

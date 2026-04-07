@@ -23,7 +23,6 @@ Endpoints :
   POST /generate-boq              → BOQ structure détaillé PDF (FR/EN)
   POST /generate-note-mep         → note de calcul MEP PDF (FR/EN)
   POST /generate-boq-mep          → BOQ MEP détaillé PDF (FR/EN)
-  POST /generate-edge             → rapport EDGE PDF (FR/EN)
   POST /generate-rapport-executif → rapport synthèse maître d'ouvrage PDF (FR/EN)
   POST /generate-fiches-structure → fiches techniques structure PDF
   POST /generate-fiches-mep       → fiches techniques MEP PDF
@@ -96,10 +95,6 @@ def get_gen_boq_mep():
     from gen_boq_mep_detail import generer_boq_mep_detail
     return generer_boq_mep_detail
 
-def get_gen_edge():
-    from gen_mep import generer_edge
-    return generer_edge
-
 def get_gen_executif():
     from gen_mep import generer_rapport_executif
     return generer_rapport_executif
@@ -120,10 +115,6 @@ def get_gen_note_mep_en():
 def get_gen_boq_mep_en():
     from gen_boq_mep_detail_en import generer_boq_mep_detail
     return generer_boq_mep_detail
-
-def get_gen_edge_en():
-    from gen_mep_en import generer_edge
-    return generer_edge
 
 def get_gen_executif_en():
     from gen_mep_en import generer_rapport_executif
@@ -185,6 +176,20 @@ class ParamsProjet(BaseModel):
     archi_pdf_url:      Optional[str] = None  # URL of uploaded archi PDF for plan background
     archi_pdf_ref:      Optional[str] = None  # Temp key for cached archi PDF (from /parse)
     geom_ref:           Optional[str] = None  # Temp key for cached geometry (from /parse)
+    # EDGE Assessment optional inputs
+    typologies:         Optional[list] = None   # list of {name,bedrooms,area,units,occupancy,...}
+    orientations:       Optional[dict] = None   # {N:{len,exposed_pct},...} (auto-calc if absent)
+    irrigated_area_m2:  Optional[float] = None
+    pool_m2:            Optional[float] = None
+    car_wash:           Optional[bool] = None
+    washing_clothes:    Optional[bool] = None
+    process_water:      Optional[bool] = None
+    dishwasher:         Optional[bool] = None
+    pre_rinse:          Optional[bool] = None
+    cost_construction_xof_m2: Optional[float] = None
+    sale_value_xof_m2:  Optional[float] = None
+    nb_sous_sols:       Optional[int] = None
+    roof_area_m2:       Optional[float] = None
 
 
 # ════════════════════════════════════════════════════════════
@@ -1382,7 +1387,20 @@ async def generate_edge_assessment(params: ParamsProjet):
         set_pdf_devise(get_devise_info(params.ville))
 
         from gen_edge_assessment import generer_edge_assessment
-        pdf_bytes = generer_edge_assessment(rm, params.dict())
+        params_dict = params.dict()
+        # Auto-compute facade orientations from DXF geometry if available
+        try:
+            from geometry_orientations import compute_facade_orientations
+            geom = _resolve_geometry(params)
+            if geom and not params_dict.get('orientations'):
+                orient = compute_facade_orientations(geom)
+                if orient:
+                    params_dict['orientations'] = orient
+                    logger.info(f"/generate-edge-assessment: facade orientations from DXF "
+                                f"({sum(o['len'] for o in orient.values()):.0f} m perimeter)")
+        except Exception as e:
+            logger.warning(f"Facade orientations extraction failed: {e}")
+        pdf_bytes = generer_edge_assessment(rm, params_dict)
         gc.collect()
         return pdf_response(pdf_bytes, fname(params, "edge_assessment"))
     except Exception as e:
@@ -1478,31 +1496,6 @@ async def generate_rapport_docx(params: ParamsProjet):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/generate-edge")
-async def generate_edge(params: ParamsProjet):
-    """Rapport EDGE IFC v3 PDF — scores réels + plan d'action (FR/EN)."""
-    try:
-        _, _, calculer_structure = get_moteur_structure()
-        calculer_mep = get_moteur_mep()
-        donnees = params_to_donnees(params)
-        rs = calculer_structure(donnees)
-        rm = calculer_mep(donnees, rs)
-        set_pdf_lang(getattr(params, 'lang', 'fr'))
-        set_pdf_devise(get_devise_info(params.ville))
-
-        if is_en(params):
-            generer = get_gen_edge_en()
-        else:
-            generer = get_gen_edge()
-
-        pdf_bytes = generer(rm, params.dict())
-        gc.collect()
-        return pdf_response(pdf_bytes, fname(params, "edge"))
-    except Exception as e:
-        logger.error(f"/generate-edge error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
 @app.post("/generate-rapport-executif")
 async def generate_rapport_executif(params: ParamsProjet):
     """Rapport de synthèse exécutif PDF — maître d'ouvrage (FR/EN)."""
@@ -1577,6 +1570,44 @@ async def generate_fiches_mep(params: ParamsProjet):
         return pdf_response(pdf_bytes, fname(params, "fiches_mep"))
     except Exception as e:
         logger.error(f"/generate-fiches-mep error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/generate-schemas-ferraillage")
+async def generate_schemas_ferraillage(params: ParamsProjet):
+    """Schemas de ferraillage (poteau, poutre, fondation) — propre onglet."""
+    try:
+        _, _, calculer_structure = get_moteur_structure()
+        donnees = params_to_donnees(params)
+        rs = calculer_structure(donnees)
+        set_pdf_lang(getattr(params, 'lang', 'fr'))
+        set_pdf_devise(get_devise_info(params.ville))
+        from gen_schemas_ferraillage import generer_schemas_ferraillage
+        pdf_bytes = generer_schemas_ferraillage(rs, params.dict())
+        gc.collect()
+        return pdf_response(pdf_bytes, fname(params, "schemas_ferraillage"))
+    except Exception as e:
+        logger.error(f"/generate-schemas-ferraillage error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/generate-schemas-mep")
+async def generate_schemas_mep(params: ParamsProjet):
+    """Schemas isometriques MEP (plomberie + electricite) — propre onglet."""
+    try:
+        _, _, calculer_structure = get_moteur_structure()
+        calculer_mep = get_moteur_mep()
+        donnees = params_to_donnees(params)
+        rs = calculer_structure(donnees)
+        rm = calculer_mep(donnees, rs)
+        set_pdf_lang(getattr(params, 'lang', 'fr'))
+        set_pdf_devise(get_devise_info(params.ville))
+        from gen_schemas_mep_iso import generer_schemas_mep_iso
+        pdf_bytes = generer_schemas_mep_iso(rm, params.dict())
+        gc.collect()
+        return pdf_response(pdf_bytes, fname(params, "schemas_mep"))
+    except Exception as e:
+        logger.error(f"/generate-schemas-mep error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
