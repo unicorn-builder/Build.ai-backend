@@ -1041,19 +1041,20 @@ def _legend_pro(c, w, h, items, title="LÉGENDE"):
     Width is computed from the longest label so no text overflows the frame."""
     # Compute label width with stringWidth, then add room for symbol + padding
     from reportlab.pdfbase.pdfmetrics import stringWidth
-    LABEL_FONT = "Helvetica"; LABEL_SIZE = 5
-    TITLE_FONT = "Helvetica-Bold"; TITLE_SIZE = 6.5
+    LABEL_FONT = "Helvetica"; LABEL_SIZE = 6.5
+    TITLE_FONT = "Helvetica-Bold"; TITLE_SIZE = 8
+    LINE_STEP = 11
     def _lbl(it):
         if isinstance(it, dict): return it.get('label','')
         return it[2]
     max_label_w = max((stringWidth(_lbl(it), LABEL_FONT, LABEL_SIZE) for it in items), default=0)
     title_w = stringWidth(title, TITLE_FONT, TITLE_SIZE)
-    # Box width: 3mm left pad + 14pt symbol zone + 2pt gap + label + 3mm right pad
-    box_w_pt = 3*mm + 14 + 2 + max(max_label_w, title_w) + 3*mm
-    box_w_pt = max(box_w_pt, 58*mm)   # keep a minimum so small lists still read well
-    box_w_pt = min(box_w_pt, 110*mm)  # avoid overflowing the page
+    # Box width: 3mm left pad + 14pt symbol zone + 3pt gap + label + 4mm right pad
+    box_w_pt = 3*mm + 14 + 3 + max(max_label_w, title_w) + 4*mm
+    box_w_pt = max(box_w_pt, 68*mm)   # keep a minimum so small lists still read well
+    box_w_pt = min(box_w_pt, 118*mm)  # avoid overflowing the page
     lx = w - box_w_pt - 2*mm; ly = h - 25*mm
-    leg_h = min(len(items) * 10 + 16, 180*mm)
+    leg_h = min(len(items) * LINE_STEP + 18, 200*mm)
     c.setFillColor(BLANC); c.setStrokeColor(NOIR); c.setLineWidth(0.5)
     c.rect(lx, ly - leg_h, box_w_pt, leg_h, fill=1, stroke=1)
 
@@ -1102,9 +1103,9 @@ def _legend_pro(c, w, h, items, title="LÉGENDE"):
             c.line(sx, ly_item + 2, sx + 12, ly_item + 2)
 
         # Draw label
-        c.setFillColor(NOIR); c.setFont("Helvetica", 5)
+        c.setFillColor(NOIR); c.setFont(LABEL_FONT, LABEL_SIZE)
         c.drawString(sx + 16, ly_item - 0.5, label)
-        ly_item -= 9
+        ly_item -= LINE_STEP
 
 
 def _label_columns_on_grid(c, ox, oy, sc, nx, ny, px_m, py_m, pot_s):
@@ -3252,6 +3253,7 @@ def generer_plans_mep(output_path, resultats_mep=None, resultats_structure=None,
     for title, lot_label, key in sublots:
       for level_idx_mep, (level_label, level_geom) in enumerate(level_list):
         page += 1
+        is_terrasse_page = str(level_label).lower().startswith(('terrasse','toiture','toit'))
         w, h = A3L; c.setPageSize(A3L); _border(c, w, h)
         c.setFillColor(NOIR); c.setFont("Helvetica-Bold", 12)
         c.drawString(14*mm, h - 17*mm, f"{title} — {level_label}")
@@ -3348,6 +3350,19 @@ def generer_plans_mep(output_path, resultats_mep=None, resultats_structure=None,
             _lg = level_geom or {}
             lvl_wet, lvl_living, lvl_service = _classify_rooms(_lg.get('rooms', []))
             lvl_all = lvl_wet + lvl_living + lvl_service
+            # On a terrace/roof page, interior rooms of the standard floor must
+            # NOT drive equipment placement (prises, clim, etc.) — keep only
+            # explicitly exterior spaces. If none, the page stays empty of indoor
+            # symbols, which is correct for a roof plan.
+            if is_terrasse_page:
+                _EXT_KW = ('terrasse','toiture','toit','balcon','jardin','piscine','patio','loggia')
+                def _ext_room(r):
+                    nm = r.get('name_norm') or _norm_name(r.get('name',''))
+                    return any(k in nm for k in _EXT_KW)
+                lvl_wet = [r for r in lvl_wet if _ext_room(r)]
+                lvl_living = [r for r in lvl_living if _ext_room(r)]
+                lvl_service = [r for r in lvl_service if _ext_room(r)]
+                lvl_all = lvl_wet + lvl_living + lvl_service
             def _nm(r):
                 return r.get('name_norm') or _norm_name(r.get('name',''))
             lvl_shafts = [(r['x'], r['y']) for r in lvl_service if 'asc' in _nm(r)]
@@ -3580,14 +3595,26 @@ def generer_plans_mep(output_path, resultats_mep=None, resultats_structure=None,
                 # réelle (plus de cluster autour du centroïde).
                 import math as _m
                 circuit_idx = 1
+                # Building envelope — used to clamp fallback room bboxes so
+                # prises never spill outside the walls.
+                _env = _dwg_bounds(level_geom) if level_geom else None
                 def _room_bbox(r):
                     b = r.get('bbox_mm') or r.get('bbox')
                     if b and len(b) >= 4:
                         return b[0], b[1], b[2], b[3]
-                    # Fallback: carré équivalent centré sur (x,y)
+                    # Fallback: carré équivalent centré sur (x,y), clampé à l'enveloppe
                     area = max(6.0, r.get('area_m2', 12.0))
                     side = _m.sqrt(area) * 1000.0  # mm
-                    return (r['x'] - side/2, r['y'] - side/2, side, side)
+                    bx, by = r['x'] - side/2, r['y'] - side/2
+                    bw, bh = side, side
+                    if _env:
+                        ex0, ey0, ex1, ey1 = _env
+                        # Intersect with envelope
+                        nx0 = max(bx, ex0); ny0 = max(by, ey0)
+                        nx1 = min(bx + bw, ex1); ny1 = min(by + bh, ey1)
+                        if nx1 > nx0 and ny1 > ny0:
+                            return (nx0, ny0, nx1 - nx0, ny1 - ny0)
+                    return (bx, by, bw, bh)
                 def _place_along_perimeter(r, n_prises):
                     bx, by, bw, bh = _room_bbox(r)
                     if bw <= 0 or bh <= 0:
@@ -3597,6 +3624,13 @@ def generer_plans_mep(output_path, resultats_mep=None, resultats_structure=None,
                     inset = max(inset, 200.0)
                     x0, y0 = bx + inset, by + inset
                     x1, y1 = bx + bw - inset, by + bh - inset
+                    # Hard clamp to building envelope as a last safety net
+                    if _env:
+                        ex0, ey0, ex1, ey1 = _env
+                        x0 = max(x0, ex0); y0 = max(y0, ey0)
+                        x1 = min(x1, ex1); y1 = min(y1, ey1)
+                        if x1 <= x0 or y1 <= y0:
+                            return []
                     # Distribue n_prises autour du périmètre, en évitant les coins
                     perim_pts = []
                     # Mur bas, haut, gauche, droite : chacune reçoit n/4 prises
