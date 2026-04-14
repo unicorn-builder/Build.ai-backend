@@ -1848,7 +1848,20 @@ def generer_plans_structure(output_path, resultats=None, params=None, dwg_geomet
         lvl_geom = dwg_levels.get(level_name) or dwg_levels.get('Étage courant')
         # Terrasse: strip interior content — only structural slab + acrotère + grid
         # (pool, rooms, interior walls don't belong on a roof-slab plan)
-        is_terrasse_level = level_name.lower().startswith('terrasse')
+        is_terrasse_level = level_name.lower().startswith(('terrasse','toiture','toit'))
+        _ln = level_name.lower()
+        is_soussol_level = 'sous-sol' in _ln or 'sous sol' in _ln or 'parking' in _ln
+        if is_soussol_level and lvl_geom and lvl_geom is dwg_levels.get('Étage courant'):
+            # Synth sous-sol: strip residential content when reusing étage geom
+            lvl_geom = {
+                'walls': [],
+                'windows': [], 'doors': [], 'rooms': [],
+                'axes_x': lvl_geom.get('axes_x', []),
+                'axes_y': lvl_geom.get('axes_y', []),
+                '_terrace_bounds': _dwg_bounds(lvl_geom),
+                '_cv_meta': lvl_geom.get('_cv_meta'),
+                '_synth_level': 'sous_sol',
+            }
         if is_terrasse_level and lvl_geom:
             lvl_geom = {
                 'walls': [],            # no interior wall redraw
@@ -3217,13 +3230,46 @@ def generer_plans_mep(output_path, resultats_mep=None, resultats_structure=None,
         project_levels.append(f"Étage courant (1-{nb_et})" if nb_et > 1 else "Étage 1")
     project_levels.append("Terrasse")
 
+    def _synth_level_geom(base, level_label):
+        """When only one DWG is uploaded, synthesize per-level geometry so
+        each planche looks different (not just a repeated RDC). Sous-sol keeps
+        axes + envelope for a parking layout, RDC/étage courant keep the full
+        plan, Terrasse keeps only bounds for slab + acrotère rendering."""
+        if not base:
+            return base
+        lab = str(level_label).lower()
+        # Terrasse / toiture: slab + acrotère only
+        if lab.startswith(('terrasse','toiture','toit')):
+            return {
+                'walls': [], 'windows': [], 'doors': [], 'rooms': [],
+                'axes_x': base.get('axes_x', []),
+                'axes_y': base.get('axes_y', []),
+                '_terrace_bounds': _dwg_bounds(base),
+                '_cv_meta': base.get('_cv_meta'),
+                '_synth_level': 'terrasse',
+            }
+        # Sous-sol / parking: envelope + axes (no interior rooms)
+        if 'sous-sol' in lab or 'sous sol' in lab or 'parking' in lab or lab.startswith('ss'):
+            return {
+                'walls': [w for w in base.get('walls', []) if w.get('is_exterior') or w.get('is_outer')],
+                'windows': [], 'doors': [], 'rooms': [],
+                'axes_x': base.get('axes_x', []),
+                'axes_y': base.get('axes_y', []),
+                '_terrace_bounds': _dwg_bounds(base),
+                '_cv_meta': base.get('_cv_meta'),
+                '_synth_level': 'sous_sol',
+            }
+        # RDC / étage courant: keep full plan
+        return base
+
     # Map each level to its geometry (multi-DWG or reuse single)
     if dwg_levels and len(dwg_levels) > 1:
         level_list = list(dwg_levels.items())
     else:
-        # Single geometry: reuse for all levels
+        # Single geometry: synthesize a differentiated view per level so
+        # we don't render the same plan 4 times.
         single_geom = list(dwg_levels.values())[0] if dwg_levels else None
-        level_list = [(name, single_geom) for name in project_levels]
+        level_list = [(name, _synth_level_geom(single_geom, name)) for name in project_levels]
 
     # Sub-lots with grouping: sub-lots sharing lot_label are on SAME page
     # 12 sous-lots × N niveaux = 1 page par sous-lot par niveau (lisible)
@@ -3253,7 +3299,10 @@ def generer_plans_mep(output_path, resultats_mep=None, resultats_structure=None,
     for title, lot_label, key in sublots:
       for level_idx_mep, (level_label, level_geom) in enumerate(level_list):
         page += 1
-        is_terrasse_page = str(level_label).lower().startswith(('terrasse','toiture','toit'))
+        _lvl_lower = str(level_label).lower()
+        is_terrasse_page = _lvl_lower.startswith(('terrasse','toiture','toit'))
+        is_soussol_page = 'sous-sol' in _lvl_lower or 'sous sol' in _lvl_lower or 'parking' in _lvl_lower or _lvl_lower.startswith('ss')
+        is_synth_level = bool(level_geom and level_geom.get('_synth_level'))
         w, h = A3L; c.setPageSize(A3L); _border(c, w, h)
         c.setFillColor(NOIR); c.setFont("Helvetica-Bold", 12)
         c.drawString(14*mm, h - 17*mm, f"{title} — {level_label}")
@@ -3336,11 +3385,35 @@ def generer_plans_mep(output_path, resultats_mep=None, resultats_structure=None,
                 _draw_grid_axes(c, ox, oy, sc_g, nx, ny, px_m, py_m, gw, gh)
                 _draw_poteaux(c, ox, oy, sc_g, nx, ny, px_m, py_m, pot_s)
 
-        # MODE 3: Parametric grid
+        # MODE 3: Parametric grid (also used for synth sous-sol/terrasse)
         else:
             ox, oy, gw, gh = ox_g, oy_g, gw_g, gh_g
             _draw_grid_axes(c, ox, oy, sc_g, nx, ny, px_m, py_m, gw, gh)
             _draw_poteaux(c, ox, oy, sc_g, nx, ny, px_m, py_m, pot_s)
+            # Synth terrasse: draw slab + acrotère outline over the grid so the
+            # page reads as a roof plan, not a blank parametric grid.
+            if is_terrasse_page and level_geom and level_geom.get('_terrace_bounds'):
+                tb = level_geom['_terrace_bounds']
+                tw = tb[2] - tb[0]; th = tb[3] - tb[1]
+                if tw > 0 and th > 0:
+                    # Fit the terrace bounds into the grid area
+                    scl = min(gw / tw, gh / th) * 0.92
+                    offx = ox + (gw - tw*scl)/2
+                    offy = oy + (gh - th*scl)/2
+                    # Dalle BA
+                    c.setStrokeColor(NOIR); c.setLineWidth(1.2); c.setFillColor(BLANC)
+                    c.rect(offx, offy, tw*scl, th*scl, fill=0, stroke=1)
+                    # Acrotère 150mm offset
+                    inset = 150 * scl
+                    c.setStrokeColor(NOIR); c.setLineWidth(0.6); c.setDash(2, 1.5)
+                    c.rect(offx+inset, offy+inset, tw*scl-2*inset, th*scl-2*inset, fill=0, stroke=1)
+                    c.setDash()
+                    c.setFillColor(NOIR); c.setFont("Helvetica-Oblique", 6)
+                    c.drawString(offx+4, offy+4, "Toiture-Terrasse — Dalle BA + Acrotère h=80cm + étanchéité multicouche")
+            # Synth sous-sol: label parking level
+            elif is_soussol_page and is_synth_level:
+                c.setFillColor(NOIR); c.setFont("Helvetica-Oblique", 6)
+                c.drawString(ox + 4, oy + 4, "Niveau sous-sol — trame axes + poteaux (parking / locaux techniques)")
 
         notes = []
 
@@ -3362,6 +3435,17 @@ def generer_plans_mep(output_path, resultats_mep=None, resultats_structure=None,
                 lvl_wet = [r for r in lvl_wet if _ext_room(r)]
                 lvl_living = [r for r in lvl_living if _ext_room(r)]
                 lvl_service = [r for r in lvl_service if _ext_room(r)]
+                lvl_all = lvl_wet + lvl_living + lvl_service
+            if is_soussol_page:
+                # Sous-sol/parking: strip residential rooms. Keep only genuine
+                # parking/technical service spaces when present in the geom.
+                _SS_KW = ('parking','box','garage','local','technique','gaine','cave','depot','reserve','rangement','bache','cuve','pompe','chaufferie','onduleur','tgbt','electrique','escalier','rampe','sas','ascenseur','asc','circulation')
+                def _ss_room(r):
+                    nm = r.get('name_norm') or _norm_name(r.get('name',''))
+                    return any(k in nm for k in _SS_KW)
+                lvl_wet = [r for r in lvl_wet if _ss_room(r)]
+                lvl_living = []  # no residential living in sous-sol
+                lvl_service = [r for r in lvl_service if _ss_room(r)]
                 lvl_all = lvl_wet + lvl_living + lvl_service
             def _nm(r):
                 return r.get('name_norm') or _norm_name(r.get('name',''))
