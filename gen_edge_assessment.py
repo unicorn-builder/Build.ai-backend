@@ -16,10 +16,15 @@ from reportlab.lib.styles import ParagraphStyle
 from tijan_theme import (BLEU, VERT, VERT_LIGHT, ORANGE, ORANGE_LT,
                          GRIS1, GRIS2, GRIS3,
                          ML, MR, CW, W, S, HeaderFooter, p, fmt_n, fmt_fcfa,
-                         section_title, table_style)
+                         section_title, table_style, _current_lang)
 
 # Alias EDGE/IFC navy = bleu Tijan
 NAVY = BLEU
+
+# Translation helper
+def _t(fr_text, en_text):
+    """Return FR or EN text based on current PDF language"""
+    return en_text if _current_lang == 'en' else fr_text
 
 
 # ══════════════════════════════════════════════════════════════
@@ -461,8 +466,8 @@ def _edge_savings_summary(story, rm):
     _section_header(story, "EDGE Savings Summary")
     e = rm.edge
     data = [
-        [p("Pilier", 'th'), p("Baseline", 'th'),
-         p("Projet", 'th'), p("Économie", 'th'), p("Statut", 'th')],
+        [p(_t("Pilier", "Pillar"), 'th'), p("Baseline", 'th'),
+         p(_t("Projet", "Project"), 'th'), p(_t("Économie", "Savings"), 'th'), p(_t("Statut", "Status"), 'th')],
         [p("Energy", 'td_b'),
          p(f"{e.base_energie_kwh_m2_an:.1f} kWh/m²/yr", 'td'),
          p(f"{e.projet_energie_kwh_m2_an:.1f} kWh/m²/yr", 'td'),
@@ -486,9 +491,11 @@ def _edge_savings_summary(story, rm):
 
     story.append(Spacer(1, 4*mm))
     story.append(Paragraph(f"<b>Certification:</b> {e.niveau_certification}", S['body']))
-    story.append(Paragraph(
+    methodology_text = _t(
         "Méthodologie: IFC EDGE v3 — calculs Tijan AI (locaux, indépendants de la plateforme EDGE).",
-        S['small']))
+        "Methodology: IFC EDGE v3 — Tijan AI calculations (local, independent from EDGE platform)."
+    )
+    story.append(Paragraph(methodology_text, S['small']))
 
 
 # ══════════════════════════════════════════════════════════════
@@ -550,13 +557,13 @@ def _measures_detail(story, rm):
     """Détail mesures par pilier avec gain %, statut, impact prix."""
     e = rm.edge
     piliers = [
-        ('ÉNERGIE',    'PILIER 1 — ÉNERGIE',
+        (_t('ÉNERGIE', 'ENERGY'),    _t('PILIER 1 — ÉNERGIE', 'PILLAR 1 — ENERGY'),
          getattr(e, 'mesures_energie', []),
          e.base_energie_kwh_m2_an, e.projet_energie_kwh_m2_an, 'kWh/m²/an'),
-        ('EAU',        'PILIER 2 — EAU',
+        (_t('EAU', 'WATER'),        _t('PILIER 2 — EAU', 'PILLAR 2 — WATER'),
          getattr(e, 'mesures_eau', []),
          e.base_eau_L_pers_j, e.projet_eau_L_pers_j, 'L/pers/j'),
-        ('MATÉRIAUX',  'PILIER 3 — MATÉRIAUX',
+        (_t('MATÉRIAUX', 'MATERIALS'),  _t('PILIER 3 — MATÉRIAUX', 'PILLAR 3 — MATERIALS'),
          getattr(e, 'mesures_materiaux', []),
          e.base_ei_kwh_m2, e.projet_ei_kwh_m2, 'kWh/m²'),
     ]
@@ -566,20 +573,25 @@ def _measures_detail(story, rm):
         else:
             story.append(Spacer(1, 4*mm))
         story += section_title('', titre)
+        baseline_label = _t("Référence bâtiment standard :", "Reference standard building:")
+        project_label = _t("Projet :", "Project:")
         story.append(Paragraph(
-            f'Référence bâtiment standard : {base:.0f} {unite} | '
-            f'Projet : {projet:.0f} {unite}',
+            f'{baseline_label} {base:.0f} {unite} | '
+            f'{project_label} {projet:.0f} {unite}',
             S['body']))
         story.append(Spacer(1, 2*mm))
         if not mesures:
-            story.append(Paragraph('— Aucune mesure détaillée —', S['small']))
+            no_measures = _t('— Aucune mesure détaillée —', '— No detailed measures —')
+            story.append(Paragraph(no_measures, S['small']))
             continue
-        m_data = [[p(h, 'th') for h in
-                   ['MESURE', 'GAIN (%)', 'STATUT', 'IMPACT PRIX']]]
+        headers = [_t('MESURE', 'MEASURE'), _t('GAIN (%)', 'GAIN (%)'), _t('STATUT', 'STATUS'), _t('IMPACT PRIX', 'COST IMPACT')]
+        m_data = [[p(h, 'th') for h in headers]]
         for m in mesures:
             gain = m.get('gain_pct', 0)
             statut = m.get('statut', '—')
-            est_integre = 'Intégré' in statut or 'standard' in statut
+            integre_fr = 'Intégré' in statut or 'standard' in statut
+            integre_en = 'Integrated' in statut or 'standard' in statut
+            est_integre = integre_en if _current_lang == 'en' else integre_fr
             m_data.append([
                 p(m.get('mesure', '—')),
                 p(f'+{gain}%', 'td_g_r' if est_integre else 'td_r'),
@@ -596,20 +608,24 @@ def _measures_detail(story, rm):
 
 
 def _plan_action(story, rm):
-    """Plan d'action d'optimisation vers certification (si non-certifiable)."""
+    """Action plan for optimization towards certification (if not certifiable)."""
     e = rm.edge
     if getattr(e, 'certifiable', True) or not getattr(e, 'plan_action', None):
         return
     story.append(PageBreak())
-    story += section_title('B', "PLAN D'ACTION — OPTIMISATION VERS CERTIFICATION")
+    plan_title = _t("PLAN D'ACTION — OPTIMISATION VERS CERTIFICATION", "ACTION PLAN — OPTIMIZATION FOR CERTIFICATION")
+    story += section_title('B', plan_title)
+    cost_label = _t('Coût total de mise en conformité estimé :', 'Estimated total compliance cost:')
+    roi_label = _t('ROI estimé :', 'Estimated ROI:')
     story.append(Paragraph(
-        f'Coût total de mise en conformité estimé : '
+        f'{cost_label} '
         f'{fmt_fcfa(getattr(e, "cout_mise_conformite_fcfa", 0))} | '
-        f'ROI estimé : {getattr(e, "roi_ans", 0)} ans',
+        f'{roi_label} {getattr(e, "roi_ans", 0)} {_t("ans", "years")}',
         S['note']))
     story.append(Spacer(1, 2*mm))
-    pa_data = [[p(h, 'th') for h in
-                ['PILIER', 'ACTION', 'GAIN (%)', 'COÛT', 'ROI', 'IMPACT']]]
+    headers = [_t('PILIER', 'PILLAR'), _t('ACTION', 'ACTION'), _t('GAIN (%)', 'GAIN (%)'),
+               _t('COÛT', 'COST'), _t('ROI', 'ROI'), _t('IMPACT', 'IMPACT')]
+    pa_data = [[p(h, 'th') for h in headers]]
     for action in e.plan_action:
         cout = action.get('cout_fcfa', 0)
         roi = action.get('roi_ans', 0)

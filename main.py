@@ -1409,14 +1409,17 @@ async def generate_edge_assessment(params: ParamsProjet):
 
 
 @app.post("/generate-boq-xlsx")
-async def generate_boq_xlsx(params: ParamsProjet):
-    """BOQ Structure as Excel (.xlsx)."""
+async def generate_boq_xlsx(request: Request):
+    """BOQ Structure as Excel (.xlsx) — Bilingual FR/EN."""
     try:
+        body = await request.json()
+        lang = body.pop("lang", "fr")
+        params = ParamsProjet(**body)
         _, _, calculer_structure = get_moteur_structure()
         from gen_boq_xlsx import generer_boq_structure_xlsx
         donnees = params_to_donnees(params)
         rs = calculer_structure(donnees)
-        xlsx_bytes = generer_boq_structure_xlsx(rs, params.dict())
+        xlsx_bytes = generer_boq_structure_xlsx(rs, params.dict(), lang=lang)
         gc.collect()
         xlsx_name = f"tijan_boq_structure_{params.nom.replace(' ','_')[:20]}.xlsx"
         return StreamingResponse(
@@ -1430,16 +1433,19 @@ async def generate_boq_xlsx(params: ParamsProjet):
 
 
 @app.post("/generate-boq-mep-xlsx")
-async def generate_boq_mep_xlsx(params: ParamsProjet):
-    """BOQ MEP as Excel (.xlsx)."""
+async def generate_boq_mep_xlsx(request: Request):
+    """BOQ MEP as Excel (.xlsx) — Bilingual FR/EN."""
     try:
+        body = await request.json()
+        lang = body.pop("lang", "fr")
+        params = ParamsProjet(**body)
         _, _, calculer_structure = get_moteur_structure()
         calculer_mep = get_moteur_mep()
         from gen_boq_mep_xlsx import generer_boq_mep_xlsx
         donnees = params_to_donnees(params)
         rs = calculer_structure(donnees)
         rm = calculer_mep(donnees, rs)
-        xlsx_bytes = generer_boq_mep_xlsx(rm, params.dict())
+        xlsx_bytes = generer_boq_mep_xlsx(rm, params.dict(), lang=lang)
         gc.collect()
         xlsx_name = f"tijan_boq_mep_{params.nom.replace(' ','_')[:20]}.xlsx"
         return StreamingResponse(
@@ -1453,14 +1459,23 @@ async def generate_boq_mep_xlsx(params: ParamsProjet):
 
 
 @app.post("/generate-note-docx")
-async def generate_note_docx(params: ParamsProjet):
-    """Note de calcul structure as Word (.docx)."""
+async def generate_note_docx(request: Request):
+    """Note de calcul structure as Word (.docx) — Bilingual FR/EN."""
     try:
+        body = await request.json()
+        lang = body.pop("lang", "fr")  # Extract lang (fr or en)
+        params = ParamsProjet(**body)
         _, _, calculer_structure = get_moteur_structure()
-        from gen_note_docx import generer as generer_note_docx
         donnees = params_to_donnees(params)
         rs = calculer_structure(donnees)
-        docx_bytes = generer_note_docx(donnees, rs)
+
+        if lang == "en":
+            from gen_note_docx_en import generer as generer_note_docx_en
+            docx_bytes = generer_note_docx_en(donnees, rs)
+        else:
+            from gen_note_docx import generer as generer_note_docx
+            docx_bytes = generer_note_docx(donnees, rs)
+
         gc.collect()
         docx_name = f"tijan_note_structure_{params.nom.replace(' ','_')[:20]}.docx"
         return StreamingResponse(
@@ -1474,16 +1489,25 @@ async def generate_note_docx(params: ParamsProjet):
 
 
 @app.post("/generate-rapport-docx")
-async def generate_rapport_docx(params: ParamsProjet):
-    """Rapport exécutif as Word (.docx)."""
+async def generate_rapport_docx(request: Request):
+    """Rapport exécutif as Word (.docx) — Bilingual FR/EN."""
     try:
+        body = await request.json()
+        lang = body.pop("lang", "fr")  # Extract lang (fr or en)
+        params = ParamsProjet(**body)
         _, _, calculer_structure = get_moteur_structure()
         calculer_mep = get_moteur_mep()
-        from gen_rapport_docx import generer_rapport_executif_docx
         donnees = params_to_donnees(params)
         rs = calculer_structure(donnees)
         rm = calculer_mep(donnees, rs)
-        docx_bytes = generer_rapport_executif_docx(rs, rm, params.dict())
+
+        if lang == "en":
+            from gen_rapport_docx_en import generer_rapport_executif_docx as generer_rapport_en
+            docx_bytes = generer_rapport_en(rs, rm, params.dict())
+        else:
+            from gen_rapport_docx import generer_rapport_executif_docx
+            docx_bytes = generer_rapport_executif_docx(rs, rm, params.dict())
+
         gc.collect()
         docx_name = f"tijan_rapport_executif_{params.nom.replace(' ','_')[:20]}.docx"
         return StreamingResponse(
@@ -2088,9 +2112,10 @@ async def chat_projet(request: Request):
         chat_params = body.get("params", {})
         resultats_structure = body.get("resultats_structure", {})
         resultats_mep = body.get("resultats_mep", None)
+        lang = body.get("lang", "fr")  # Langue par défaut FR
         if not message:
-            raise HTTPException(status_code=400, detail="Message manquant")
-        reponse = chat(message, historique, chat_params, resultats_structure, resultats_mep)
+            raise HTTPException(status_code=400, detail="Message manquant" if lang == "fr" else "Missing message")
+        reponse = chat(message, historique, chat_params, resultats_structure, resultats_mep, lang=lang)
 
         # Detect <MODIF>{...}</MODIF> in Claude's response
         modif_match = _re.search(r'<MODIF>(.*?)</MODIF>', reponse, _re.DOTALL)
