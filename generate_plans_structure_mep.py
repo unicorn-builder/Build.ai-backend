@@ -175,7 +175,7 @@ def _build_grid(p):
     return nx, ny, px_m, py_m
 
 
-def _grid_layout(w, h, nx, ny, px_m, py_m, ml=50*mm, mb=55*mm, mr=72*mm, mt=30*mm):
+def _grid_layout(w, h, nx, ny, px_m, py_m, ml=28*mm, mb=48*mm, mr=58*mm, mt=22*mm):
     """Calculate grid position and scale — copie de v4."""
     dw = w - ml - mr
     dh = h - mb - mt
@@ -544,7 +544,7 @@ def _dwg_bounds(dwg):
     return min(xs), min(ys), max(xs), max(ys)
 
 
-def _dwg_layout(w, h, dwg, ml=50*mm, mb=55*mm, mr=72*mm, mt=30*mm):
+def _dwg_layout(w, h, dwg, ml=28*mm, mb=48*mm, mr=58*mm, mt=22*mm):
     """Calculate DWG transform to fit on page with generous margins."""
     bounds = _dwg_bounds(dwg)
     if not bounds:
@@ -554,7 +554,7 @@ def _dwg_layout(w, h, dwg, ml=50*mm, mb=55*mm, mr=72*mm, mt=30*mm):
     if dw_r < 1 or dh_r < 1:
         return None, None, None, None, None
     aw = w - ml - mr; ah = h - mb - mt
-    sc = min(aw / dw_r, ah / dh_r) * 0.95  # slight margin to breathe
+    sc = min(aw / dw_r, ah / dh_r) * 0.99  # use almost full available area
     gw = dw_r * sc; gh = dh_r * sc
     ox = ml + (aw - gw) / 2
     oy = mb + (ah - gh) / 2
@@ -1521,7 +1521,7 @@ def _draw_column_schedule(c, x, y, poteaux, nx, ny, px_m, py_m):
 # ══════════════════════════════════════════
 
 def _render_pdf_background(c, archi_pdf_path, page_idx, w, h,
-                            ml=50*mm, mb=55*mm, mr=72*mm, mt=30*mm,
+                            ml=28*mm, mb=48*mm, mr=58*mm, mt=22*mm,
                             opacity=0.18, dpi=150, grayscale=True):
     """Render a page from the architectural PDF as a background image.
 
@@ -1852,9 +1852,9 @@ def generer_plans_structure(output_path, resultats=None, params=None, dwg_geomet
         _ln = level_name.lower()
         is_soussol_level = 'sous-sol' in _ln or 'sous sol' in _ln or 'parking' in _ln
         if is_soussol_level and lvl_geom and lvl_geom is dwg_levels.get('Étage courant'):
-            # Synth sous-sol: strip residential content when reusing étage geom
+            # Synth sous-sol: keep real emprise, strip residential rooms/openings
             lvl_geom = {
-                'walls': [],
+                'walls': list(lvl_geom.get('walls', [])),
                 'windows': [], 'doors': [], 'rooms': [],
                 'axes_x': lvl_geom.get('axes_x', []),
                 'axes_y': lvl_geom.get('axes_y', []),
@@ -1864,7 +1864,7 @@ def generer_plans_structure(output_path, resultats=None, params=None, dwg_geomet
             }
         if is_terrasse_level and lvl_geom:
             lvl_geom = {
-                'walls': [],            # no interior wall redraw
+                'walls': list(lvl_geom.get('walls', [])),  # keep real emprise
                 'windows': [], 'doors': [], 'rooms': [],
                 'axes_x': lvl_geom.get('axes_x', []),
                 'axes_y': lvl_geom.get('axes_y', []),
@@ -2678,28 +2678,29 @@ def _draw_mep_nomenclature_table(c, x, y, entries, title="NOMENCLATURE ÉQUIPEME
     from reportlab.lib import colors as rl_colors
 
     header = ["Rep.", "Désignation", "Qté", "Unité", "Norme/DTU"]
-    data = [header] + [[str(e[0]), str(e[1])[:32], str(e[2]), str(e[3]), str(e[4])[:14]] for e in entries[:14]]
-    col_w = [9*mm, 52*mm, 10*mm, 10*mm, 22*mm]
-    table = Table(data, colWidths=col_w, rowHeights=[5*mm] + [3.6*mm]*(len(data)-1))
+    data = [header] + [[str(e[0]), str(e[1])[:42], str(e[2]), str(e[3]), str(e[4])[:18]] for e in entries[:14]]
+    col_w = [10*mm, 66*mm, 12*mm, 12*mm, 26*mm]
+    table = Table(data, colWidths=col_w, rowHeights=[6.5*mm] + [5*mm]*(len(data)-1))
     table.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, 0), rl_colors.HexColor("#43A956")),
         ('TEXTCOLOR', (0, 0), (-1, 0), BLANC),
         ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 0), (-1, 0), 5),
+        ('FONTSIZE', (0, 0), (-1, 0), 7.5),
         ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
-        ('FONTSIZE', (0, 1), (-1, -1), 4.5),
+        ('FONTSIZE', (0, 1), (-1, -1), 6.8),
         ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
         ('ALIGN', (1, 1), (1, -1), 'LEFT'),
-        ('LEFTPADDING', (0, 0), (-1, -1), 2),
-        ('RIGHTPADDING', (0, 0), (-1, -1), 2),
-        ('TOPPADDING', (0, 0), (-1, -1), 0.5),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 0.5),
-        ('GRID', (0, 0), (-1, -1), 0.25, GRIS3),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('LEFTPADDING', (0, 0), (-1, -1), 3),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 3),
+        ('TOPPADDING', (0, 0), (-1, -1), 1),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 1),
+        ('GRID', (0, 0), (-1, -1), 0.3, GRIS3),
         ('ROWBACKGROUNDS', (0, 1), (-1, -1), [BLANC, rl_colors.HexColor("#F5F7F5")]),
     ]))
     tw = sum(col_w)
-    th = 5*mm + 3.6*mm * (len(data)-1)
-    c.setFillColor(NOIR); c.setFont("Helvetica-Bold", 6.5)
+    th = 6.5*mm + 5*mm * (len(data)-1)
+    c.setFillColor(NOIR); c.setFont("Helvetica-Bold", 8.5)
     c.drawString(x, y + th + 2*mm, title)
     table.wrapOn(c, tw, th)
     table.drawOn(c, x, y)
@@ -3232,26 +3233,27 @@ def generer_plans_mep(output_path, resultats_mep=None, resultats_structure=None,
 
     def _synth_level_geom(base, level_label):
         """When only one DWG is uploaded, synthesize per-level geometry so
-        each planche looks different (not just a repeated RDC). Sous-sol keeps
-        axes + envelope for a parking layout, RDC/étage courant keep the full
-        plan, Terrasse keeps only bounds for slab + acrotère rendering."""
+        each planche looks different. We KEEP the original walls (to preserve
+        the real building emprise) but strip interior-only content — rooms,
+        windows, doors — that don't belong on sous-sol/terrasse plans."""
         if not base:
             return base
         lab = str(level_label).lower()
-        # Terrasse / toiture: slab + acrotère only
+        # Terrasse / toiture: real emprise + slab + acrotère (no interior rooms)
         if lab.startswith(('terrasse','toiture','toit')):
             return {
-                'walls': [], 'windows': [], 'doors': [], 'rooms': [],
+                'walls': list(base.get('walls', [])),
+                'windows': [], 'doors': [], 'rooms': [],
                 'axes_x': base.get('axes_x', []),
                 'axes_y': base.get('axes_y', []),
                 '_terrace_bounds': _dwg_bounds(base),
                 '_cv_meta': base.get('_cv_meta'),
                 '_synth_level': 'terrasse',
             }
-        # Sous-sol / parking: envelope + axes (no interior rooms)
+        # Sous-sol / parking: real emprise + axes, strip residential rooms
         if 'sous-sol' in lab or 'sous sol' in lab or 'parking' in lab or lab.startswith('ss'):
             return {
-                'walls': [w for w in base.get('walls', []) if w.get('is_exterior') or w.get('is_outer')],
+                'walls': list(base.get('walls', [])),
                 'windows': [], 'doors': [], 'rooms': [],
                 'axes_x': base.get('axes_x', []),
                 'axes_y': base.get('axes_y', []),
@@ -3385,35 +3387,35 @@ def generer_plans_mep(output_path, resultats_mep=None, resultats_structure=None,
                 _draw_grid_axes(c, ox, oy, sc_g, nx, ny, px_m, py_m, gw, gh)
                 _draw_poteaux(c, ox, oy, sc_g, nx, ny, px_m, py_m, pot_s)
 
-        # MODE 3: Parametric grid (also used for synth sous-sol/terrasse)
+        # MODE 3: Parametric grid
         else:
             ox, oy, gw, gh = ox_g, oy_g, gw_g, gh_g
             _draw_grid_axes(c, ox, oy, sc_g, nx, ny, px_m, py_m, gw, gh)
             _draw_poteaux(c, ox, oy, sc_g, nx, ny, px_m, py_m, pot_s)
-            # Synth terrasse: draw slab + acrotère outline over the grid so the
-            # page reads as a roof plan, not a blank parametric grid.
-            if is_terrasse_page and level_geom and level_geom.get('_terrace_bounds'):
-                tb = level_geom['_terrace_bounds']
-                tw = tb[2] - tb[0]; th = tb[3] - tb[1]
-                if tw > 0 and th > 0:
-                    # Fit the terrace bounds into the grid area
-                    scl = min(gw / tw, gh / th) * 0.92
-                    offx = ox + (gw - tw*scl)/2
-                    offy = oy + (gh - th*scl)/2
-                    # Dalle BA
-                    c.setStrokeColor(NOIR); c.setLineWidth(1.2); c.setFillColor(BLANC)
-                    c.rect(offx, offy, tw*scl, th*scl, fill=0, stroke=1)
-                    # Acrotère 150mm offset
-                    inset = 150 * scl
-                    c.setStrokeColor(NOIR); c.setLineWidth(0.6); c.setDash(2, 1.5)
-                    c.rect(offx+inset, offy+inset, tw*scl-2*inset, th*scl-2*inset, fill=0, stroke=1)
-                    c.setDash()
-                    c.setFillColor(NOIR); c.setFont("Helvetica-Oblique", 6)
-                    c.drawString(offx+4, offy+4, "Toiture-Terrasse — Dalle BA + Acrotère h=80cm + étanchéité multicouche")
-            # Synth sous-sol: label parking level
-            elif is_soussol_page and is_synth_level:
-                c.setFillColor(NOIR); c.setFont("Helvetica-Oblique", 6)
-                c.drawString(ox + 4, oy + 4, "Niveau sous-sol — trame axes + poteaux (parking / locaux techniques)")
+
+        # ── Synth overlays (terrasse/sous-sol) — drawn on top of whichever
+        # rendering mode was used, so the real DWG emprise stays visible ──
+        if is_terrasse_page and is_synth_level and use_dwg and level_geom.get('_terrace_bounds'):
+            tb = level_geom['_terrace_bounds']
+            # Draw acrotère as an inset dashed outline along the real emprise
+            # (offset 150mm inward from bounds, expressed in scene units)
+            try:
+                ox_b = tx(tb[0]); oy_b = ty(tb[1])
+                ox_e = tx(tb[2]); oy_e = ty(tb[3])
+                x0, x1 = min(ox_b, ox_e), max(ox_b, ox_e)
+                y0, y1 = min(oy_b, oy_e), max(oy_b, oy_e)
+                # 150mm -> scene points via bounds diff ratio
+                ins = 0.02 * min(x1-x0, y1-y0)
+                c.setStrokeColor(NOIR); c.setLineWidth(0.7); c.setDash(2, 1.5)
+                c.rect(x0+ins, y0+ins, (x1-x0)-2*ins, (y1-y0)-2*ins, fill=0, stroke=1)
+                c.setDash()
+                c.setFillColor(NOIR); c.setFont("Helvetica-Oblique", 7)
+                c.drawString(x0+4, y1-8, "Toiture-Terrasse — Dalle BA + Acrotère h=80cm + étanchéité multicouche")
+            except Exception:
+                pass
+        if is_soussol_page and is_synth_level and use_dwg:
+            c.setFillColor(NOIR); c.setFont("Helvetica-Oblique", 7)
+            c.drawString(ox + 4, oy + 4, "Sous-sol — emprise bâtiment + axes + poteaux (parking / locaux techniques)")
 
         notes = []
 
@@ -3509,8 +3511,176 @@ def generer_plans_mep(output_path, resultats_mep=None, resultats_structure=None,
                 )
                 _wall_aware_done = False
 
-        if _wall_aware_done:
-            pass  # drawn via wall_aware_placer above; skip legacy per-lot block
+        # ── Rooftop equipment per lot (terrasse synth level) ──
+        # The real emprise is drawn but there are no interior rooms to drive the
+        # legacy per-lot blocks. Draw the ACTUAL roof equipment for each lot at
+        # sensible positions on the slab, then skip the residential drawing.
+        _rooftop_done = False
+        if is_terrasse_page and use_dwg and level_geom and level_geom.get('_terrace_bounds'):
+            tb = level_geom['_terrace_bounds']
+            bx0, by0, bx1, by1 = tb
+            cx_m = (bx0 + bx1) / 2; cy_m = (by0 + by1) / 2
+            import math as _mrt
+            def _grid_points(nx_g, ny_g, margin=0.10):
+                """Return a list of (x_mm, y_mm) covering the slab in a grid."""
+                mx = (bx1 - bx0) * margin; my = (by1 - by0) * margin
+                xs = [bx0 + mx + (bx1 - bx0 - 2*mx) * (i+0.5)/nx_g for i in range(nx_g)]
+                ys = [by0 + my + (by1 - by0 - 2*my) * (j+0.5)/ny_g for j in range(ny_g)]
+                return [(x, y) for x in xs for y in ys]
+            def _perim_points(n, inset_ratio=0.03):
+                inx = (bx1 - bx0) * inset_ratio; iny = (by1 - by0) * inset_ratio
+                x0, y0, x1, y1 = bx0+inx, by0+iny, bx1-inx, by1-iny
+                pts = []
+                for i in range(n):
+                    t = (i + 0.5) / n
+                    pts.append((x0 + t*(x1-x0), y0))
+                    pts.append((x0 + t*(x1-x0), y1))
+                    pts.append((x0, y0 + t*(y1-y0)))
+                    pts.append((x1, y0 + t*(y1-y0)))
+                return pts
+
+            def _sym_box(x, y, w_pt, h_pt, fill_c, label):
+                c.setFillColor(fill_c); c.setStrokeColor(NOIR); c.setLineWidth(0.35)
+                c.rect(x - w_pt/2, y - h_pt/2, w_pt, h_pt, fill=1, stroke=1)
+                c.setFillColor(NOIR); c.setFont("Helvetica-Bold", 3.5)
+                c.drawCentredString(x, y + h_pt/2 + 2, label)
+
+            if key == 'plb_ef':
+                # Citerne EF 50m³ + surpresseur
+                x0, y0 = tx(bx0 + (bx1-bx0)*0.15), ty(by0 + (by1-by0)*0.15)
+                c.setFillColor(BLEU); c.setStrokeColor(NOIR); c.setLineWidth(0.6)
+                c.rect(x0-18, y0-10, 36, 20, fill=1, stroke=1)
+                c.setFillColor(BLANC); c.setFont("Helvetica-Bold", 5)
+                c.drawCentredString(x0, y0-1, "CITERNE EF 50m³")
+                c.setFont("Helvetica", 3.5); c.drawCentredString(x0, y0-6, "Surpresseur 6m³/h")
+                notes = ["Citerne 50m³ + surpresseur 6m³/h sur dalle toiture", "Colonne montante EF DN40 vers tous niveaux"]
+                _legend_pro(c, w, h, [(BLEU, 'fill', "Citerne EF 50m³"),
+                                      (BLEU, 1.5, "Colonne montante DN40")], "LÉGENDE — EF TOITURE")
+                _rooftop_done = True
+            elif key == 'plb_ec':
+                # Panneaux solaires thermiques
+                panels = _grid_points(6, 3)
+                for (px_m2, py_m2) in panels:
+                    x1p, y1p = tx(px_m2), ty(py_m2)
+                    c.setFillColor(colors.HexColor("#1565C0")); c.setStrokeColor(NOIR); c.setLineWidth(0.25)
+                    c.rect(x1p-8, y1p-4, 16, 8, fill=1, stroke=1)
+                notes = [f"{len(panels)} panneaux solaires thermiques", "Ballon ECS 1500L — appoint électrique"]
+                _legend_pro(c, w, h, [(colors.HexColor("#1565C0"), 'fill', "Panneau solaire thermique")], "LÉGENDE — EC TOITURE")
+                _rooftop_done = True
+            elif key == 'plb_eu':
+                # Descentes EP autour du périmètre
+                for (px_m2, py_m2) in _perim_points(4):
+                    xp, yp = tx(px_m2), ty(py_m2)
+                    c.setFillColor(colors.HexColor("#5D4037")); c.setStrokeColor(NOIR); c.setLineWidth(0.3)
+                    c.circle(xp, yp, 3, fill=1, stroke=1)
+                    c.setFillColor(BLANC); c.setFont("Helvetica-Bold", 3)
+                    c.drawCentredString(xp, yp-1, "EP")
+                notes = ["Descentes EP 16 unités — DN100", "Pente dalle 1% vers avaloirs"]
+                _legend_pro(c, w, h, [(colors.HexColor("#5D4037"), 'circle', "Descente EP DN100")], "LÉGENDE — EP TOITURE")
+                _rooftop_done = True
+            elif key == 'elec_ecl':
+                # Éclairage extérieur périmétrique
+                for (px_m2, py_m2) in _perim_points(3):
+                    xp, yp = tx(px_m2), ty(py_m2)
+                    c.setFillColor(JAUNE); c.setStrokeColor(NOIR); c.setLineWidth(0.3)
+                    c.circle(xp, yp, 2.8, fill=1, stroke=1)
+                notes = ["Éclairage toiture/navigation aérienne", "Projecteurs LED 50W périmétrique"]
+                _legend_pro(c, w, h, [(JAUNE, 'circle', "Projecteur LED 50W extérieur")], "LÉGENDE — ÉCLAIRAGE TOITURE")
+                _rooftop_done = True
+            elif key == 'elec_dist':
+                # Paratonnerre au point haut + prises étanches
+                xp, yp = tx(cx_m), ty(by1 - (by1-by0)*0.08)
+                c.setFillColor(colors.HexColor("#C62828")); c.setStrokeColor(NOIR); c.setLineWidth(0.6)
+                path = c.beginPath(); path.moveTo(xp, yp+10); path.lineTo(xp-5, yp); path.lineTo(xp+5, yp); path.close()
+                c.drawPath(path, fill=1, stroke=1)
+                c.setFillColor(NOIR); c.setFont("Helvetica-Bold", 5)
+                c.drawCentredString(xp, yp+14, "PARATONNERRE")
+                for (px_m2, py_m2) in _perim_points(2):
+                    xpp, ypp = tx(px_m2), ty(py_m2)
+                    c.setFillColor(ORANGE); c.setStrokeColor(NOIR); c.setLineWidth(0.2)
+                    c.rect(xpp-1.8, ypp-1.1, 3.6, 2.2, fill=1, stroke=1)
+                notes = ["Paratonnerre PDA rayon 60m", "Prises étanches IP65 entretien périmétriques"]
+                _legend_pro(c, w, h, [(colors.HexColor("#C62828"), 'triangle', "Paratonnerre PDA"),
+                                      (ORANGE, 'fill', "Prise étanche IP65")], "LÉGENDE — ELEC TOITURE")
+                _rooftop_done = True
+            elif key == 'cvc_clim':
+                # Groupes froids extérieurs
+                for (px_m2, py_m2) in _grid_points(5, 3, margin=0.15):
+                    xp, yp = tx(px_m2), ty(py_m2)
+                    c.setFillColor(CYAN); c.setStrokeColor(NOIR); c.setLineWidth(0.4)
+                    c.rect(xp-7, yp-5, 14, 10, fill=1, stroke=1)
+                    c.setFillColor(NOIR); c.setFont("Helvetica-Bold", 3)
+                    c.drawCentredString(xp, yp-1, "GF")
+                notes = ["Groupes froids VRV en toiture", "Alimentation frigorifique vers cassettes étages"]
+                _legend_pro(c, w, h, [(CYAN, 'fill', "Groupe froid VRV ext.")], "LÉGENDE — CLIM TOITURE")
+                _rooftop_done = True
+            elif key == 'cvc_vmc':
+                # Terminaux extraction VMC
+                for (px_m2, py_m2) in _grid_points(4, 3, margin=0.15):
+                    xp, yp = tx(px_m2), ty(py_m2)
+                    c.setFillColor(colors.HexColor("#78909C")); c.setStrokeColor(NOIR); c.setLineWidth(0.3)
+                    c.circle(xp, yp, 4, fill=1, stroke=1)
+                    c.setFillColor(BLANC); c.setFont("Helvetica-Bold", 3)
+                    c.drawCentredString(xp, yp-1, "Ex")
+                notes = ["Terminaux extraction VMC double flux", "Chapeaux ventilation DN200 pare-pluie"]
+                _legend_pro(c, w, h, [(colors.HexColor("#78909C"), 'circle', "Terminal VMC extraction")], "LÉGENDE — VMC TOITURE")
+                _rooftop_done = True
+            elif key == 'ssi_det':
+                # Détecteurs + SDI local
+                for (px_m2, py_m2) in _perim_points(2):
+                    xp, yp = tx(px_m2), ty(py_m2)
+                    c.setFillColor(ROUGE); c.setStrokeColor(NOIR); c.setLineWidth(0.3)
+                    c.circle(xp, yp, 2.5, fill=1, stroke=1)
+                notes = ["Détecteurs autonomes rooftop", "Remontée vers ECS niveau RDC"]
+                _legend_pro(c, w, h, [(ROUGE, 'circle', "Détecteur toiture")], "LÉGENDE — SSI TOITURE")
+                _rooftop_done = True
+            elif key == 'ssi_ext':
+                # EXU désenfumage
+                for (px_m2, py_m2) in _grid_points(3, 2):
+                    xp, yp = tx(px_m2), ty(py_m2)
+                    c.setFillColor(colors.HexColor("#FF5252")); c.setStrokeColor(NOIR); c.setLineWidth(0.4)
+                    c.rect(xp-6, yp-4, 12, 8, fill=1, stroke=1)
+                    c.setFillColor(BLANC); c.setFont("Helvetica-Bold", 3.5)
+                    c.drawCentredString(xp, yp-1, "EXU")
+                notes = ["Exutoires de désenfumage naturel", "Commande électrique + manuelle"]
+                _legend_pro(c, w, h, [(colors.HexColor("#FF5252"), 'fill', "Exutoire désenfumage EXU")], "LÉGENDE — DÉSENFUMAGE")
+                _rooftop_done = True
+            elif key == 'asc_plan':
+                # Local machinerie ascenseur
+                xp, yp = tx(cx_m), ty(cy_m)
+                c.setFillColor(colors.HexColor("#455A64")); c.setStrokeColor(NOIR); c.setLineWidth(0.6)
+                c.rect(xp-14, yp-10, 28, 20, fill=1, stroke=1)
+                c.setFillColor(BLANC); c.setFont("Helvetica-Bold", 5)
+                c.drawCentredString(xp, yp-1, "LOCAL MACHINERIE")
+                c.setFont("Helvetica", 3.5); c.drawCentredString(xp, yp-6, "Asc. NF EN 81-20")
+                notes = ["Local machinerie toiture", "Ventilation haute/basse naturelle"]
+                _legend_pro(c, w, h, [(colors.HexColor("#455A64"), 'fill', "Local machinerie asc.")], "LÉGENDE — ASC TOITURE")
+                _rooftop_done = True
+            elif key == 'cf':
+                # Antenne GSM / TV
+                xp, yp = tx(cx_m), ty(by1 - (by1-by0)*0.12)
+                c.setStrokeColor(colors.HexColor("#6A1B9A")); c.setFillColor(BLANC); c.setLineWidth(0.8)
+                c.line(xp, yp, xp, yp+16)
+                c.line(xp-6, yp+8, xp+6, yp+8)
+                c.line(xp-4, yp+12, xp+4, yp+12)
+                c.setFillColor(NOIR); c.setFont("Helvetica-Bold", 4)
+                c.drawCentredString(xp, yp+20, "ANTENNE GSM/TV")
+                notes = ["Antennes GSM/4G + TV terrestre", "Descente câbles coaxiaux gaine TV"]
+                _legend_pro(c, w, h, [(colors.HexColor("#6A1B9A"), 'line', "Antenne GSM/TV")], "LÉGENDE — CF TOITURE")
+                _rooftop_done = True
+            elif key == 'gtb':
+                # Coffret GTB toiture
+                xp, yp = tx(cx_m + (bx1-bx0)*0.2), ty(cy_m)
+                c.setFillColor(VERT); c.setStrokeColor(NOIR); c.setLineWidth(0.6)
+                c.rect(xp-10, yp-7, 20, 14, fill=1, stroke=1)
+                c.setFillColor(BLANC); c.setFont("Helvetica-Bold", 4.5)
+                c.drawCentredString(xp, yp-1, "GTB")
+                notes = ["Coffret GTB toiture", "Remontée BUS KNX vers GTC centrale"]
+                _legend_pro(c, w, h, [(VERT, 'fill', "Coffret GTB toiture")], "LÉGENDE — GTB TOITURE")
+                _rooftop_done = True
+
+        if _wall_aware_done or _rooftop_done:
+            pass  # drawn above; skip legacy per-lot block
         elif use_dwg and lvl_all:
             # MODE DWG : utilise les positions réelles des pièces
             shafts = lvl_shafts
