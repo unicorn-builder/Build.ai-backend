@@ -39,7 +39,7 @@ import tempfile
 import logging
 import dataclasses
 import httpx
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, List
 
 from fastapi import Request, FastAPI, File, UploadFile, HTTPException, Form
@@ -176,6 +176,7 @@ class ParamsProjet(BaseModel):
     archi_pdf_url:      Optional[str] = None  # URL of uploaded archi PDF for plan background
     archi_pdf_ref:      Optional[str] = None  # Temp key for cached archi PDF (from /parse)
     geom_ref:           Optional[str] = None  # Temp key for cached geometry (from /parse)
+    project_id:         Optional[str] = None  # Supabase projets.id — used for server-side plan archival
     # EDGE Assessment optional inputs
     typologies:         Optional[list] = None   # list of {name,bedrooms,area,units,occupancy,...}
     orientations:       Optional[dict] = None   # {N:{len,exposed_pct},...} (auto-calc if absent)
@@ -245,11 +246,15 @@ def params_to_donnees(params: ParamsProjet):
         nb_sous_sols=1 if params.avec_sous_sol else 0,
     )
 
-def pdf_response(pdf_bytes: bytes, filename: str) -> StreamingResponse:
+def pdf_response(pdf_bytes: bytes, filename: str, archive_url: Optional[str] = None) -> StreamingResponse:
+    headers = {"Content-Disposition": f"attachment; filename={filename}"}
+    if archive_url:
+        headers["X-Plan-Archive-URL"] = archive_url
+        headers["Access-Control-Expose-Headers"] = "X-Plan-Archive-URL,Content-Disposition"
     return StreamingResponse(
         io.BytesIO(pdf_bytes),
         media_type="application/pdf",
-        headers={"Content-Disposition": f"attachment; filename={filename}"},
+        headers=headers,
     )
 
 async def save_upload(file: UploadFile) -> str:
@@ -1688,9 +1693,31 @@ async def generate_plu(params: ParamsProjet):
         gc.collect()
 
 
+def _is_dwg_sourced_geometry(geom) -> bool:
+    """True if geometry comes from a DWG/DXF source (not from PDF CV fallback)."""
+    if not geom or not isinstance(geom, dict):
+        return False
+    # A geometry dict may either be flat (walls at root) or nested by level.
+    def _check(d):
+        if not isinstance(d, dict):
+            return False
+        meta = d.get('_cv_meta') or {}
+        src = str(meta.get('source', '')).lower()
+        if src == 'pdf':
+            return False
+        # any walls at all count as DWG-sourced when no pdf marker
+        return bool(d.get('walls'))
+    if _check(geom):
+        return True
+    for v in geom.values():
+        if _check(v):
+            return True
+    return False
+
+
 @app.post("/generate-plans-structure")
 async def generate_plans_structure(params: ParamsProjet):
-    """Plans structure PDF — géométrie DWG/PDF du projet si disponible, sinon grille paramétrique."""
+    """Plans structure PDF — nécessite une géométrie DWG/DXF réelle (input PDF refusé)."""
     out_path = None
     archi_pdf_path = None
     try:
@@ -1700,6 +1727,13 @@ async def generate_plans_structure(params: ParamsProjet):
         rs = calculer_structure(donnees)
         # Geometry priority: body > cache ref > APS URN > None (grid fallback)
         dwg_geometry = _resolve_geometry(params)
+        # DWG-only policy: refuse PDF-sourced or missing geometry for BA plans
+        if not _is_dwg_sourced_geometry(dwg_geometry):
+            raise HTTPException(
+                status_code=422,
+                detail="Les plans structure nécessitent un fichier DWG/DXF en entrée. "
+                       "L'import PDF est désactivé pour les plans (calculs et autres livrables restent disponibles)."
+            )
         logger.info(f"/generate-plans-structure: geometry={'yes' if dwg_geometry else 'no'}"
                      f" walls={len(dwg_geometry.get('walls',[])) if dwg_geometry and 'walls' in dwg_geometry else '?'}")
         # Resolve archi PDF for background (from cache ref or URL)
@@ -1711,7 +1745,12 @@ async def generate_plans_structure(params: ParamsProjet):
                                 archi_pdf_path=archi_pdf_path)
         with open(out_path, "rb") as f:
             pdf_bytes = f.read()
-        return pdf_response(pdf_bytes, fname(params, "plans_structure"))
+        # Server-side persistence (best-effort, non-blocking)
+        _archive_url = _supabase_archive_plan(
+            getattr(params, 'project_id', None) or params.dict().get('project_id'),
+            "plans_structure", pdf_bytes
+        )
+        return pdf_response(pdf_bytes, fname(params, "plans_structure"), archive_url=_archive_url)
     except Exception as e:
         logger.error(f"/generate-plans-structure error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -1732,7 +1771,7 @@ async def generate_plans_structure(params: ParamsProjet):
 
 @app.post("/generate-plans-mep")
 async def generate_plans_mep(params: ParamsProjet):
-    """Plans MEP PDF — géométrie DWG/PDF du projet si disponible, sinon grille paramétrique."""
+    """Plans MEP PDF — nécessite une géométrie DWG/DXF réelle (input PDF refusé)."""
     out_path = None
     archi_pdf_path = None
     try:
@@ -1744,6 +1783,13 @@ async def generate_plans_mep(params: ParamsProjet):
         rm = calculer_mep(donnees, rs)
         # Geometry priority: body > cache ref > APS URN > None (grid fallback)
         dwg_geometry = _resolve_geometry(params)
+        # DWG-only policy: refuse PDF-sourced or missing geometry for MEP plans
+        if not _is_dwg_sourced_geometry(dwg_geometry):
+            raise HTTPException(
+                status_code=422,
+                detail="Les plans MEP nécessitent un fichier DWG/DXF en entrée. "
+                       "L'import PDF est désactivé pour les plans (calculs et autres livrables restent disponibles)."
+            )
         logger.info(f"/generate-plans-mep: geometry={'yes' if dwg_geometry else 'no'}")
         # Resolve archi PDF for background (from cache ref or URL)
         archi_pdf_path = _resolve_archi_pdf(params)
@@ -1754,7 +1800,11 @@ async def generate_plans_mep(params: ParamsProjet):
                           archi_pdf_path=archi_pdf_path)
         with open(out_path, "rb") as f:
             pdf_bytes = f.read()
-        return pdf_response(pdf_bytes, fname(params, "plans_mep"))
+        _archive_url = _supabase_archive_plan(
+            getattr(params, 'project_id', None) or params.dict().get('project_id'),
+            "plans_mep", pdf_bytes
+        )
+        return pdf_response(pdf_bytes, fname(params, "plans_mep"), archive_url=_archive_url)
     except Exception as e:
         logger.error(f"/generate-plans-mep error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -1791,6 +1841,8 @@ async def generate_plans_structure_dwg(params: ParamsProjet):
                                     dwg_geometry=dwg_geometry)
         with open(out_path, "rb") as f:
             dxf_bytes = f.read()
+        _supabase_archive_plan(getattr(params, 'project_id', None) or params.dict().get('project_id'),
+                               "plans_structure_dxf", dxf_bytes, content_type="application/dxf")
         dxf_name = f"tijan_plans_structure_{params.nom.replace(' ','_')[:20]}.dxf"
         return StreamingResponse(
             io.BytesIO(dxf_bytes),
@@ -1829,6 +1881,8 @@ async def generate_plans_mep_dwg(params: ParamsProjet):
                               params=params.dict(), dwg_geometry=dwg_geometry)
         with open(out_path, "rb") as f:
             dxf_bytes = f.read()
+        _supabase_archive_plan(getattr(params, 'project_id', None) or params.dict().get('project_id'),
+                               "plans_mep_dxf", dxf_bytes, content_type="application/dxf")
         dxf_name = f"tijan_plans_mep_{params.nom.replace(' ','_')[:20]}.dxf"
         return StreamingResponse(
             io.BytesIO(dxf_bytes),
@@ -1845,6 +1899,67 @@ async def generate_plans_mep_dwg(params: ParamsProjet):
             except OSError:
                 pass
         gc.collect()
+
+
+def _supabase_archive_plan(project_id: str, kind: str, data: bytes, content_type: str = "application/pdf") -> Optional[str]:
+    """Best-effort server-side upload of a generated plan to Supabase Storage.
+    Uses SUPABASE_URL + SUPABASE_SERVICE_ROLE env vars (never exposed to client).
+    Also merges the public URL into projets.plans_urls jsonb column.
+    Never raises — silent failure if env missing or Supabase unreachable.
+    Returns the public URL or None.
+    """
+    if not project_id or not kind or not data:
+        return None
+    base = os.environ.get("SUPABASE_URL", "").rstrip("/")
+    key  = os.environ.get("SUPABASE_SERVICE_ROLE") or os.environ.get("SUPABASE_SERVICE_KEY")
+    if not base or not key:
+        return None
+    ext = "dxf" if kind.endswith("_dxf") else "pdf"
+    path = f"{project_id}/{kind}.{ext}"
+    try:
+        with httpx.Client(timeout=15) as client:
+            # Upload (upsert)
+            r = client.post(
+                f"{base}/storage/v1/object/plans/{path}",
+                content=data,
+                headers={
+                    "Authorization": f"Bearer {key}",
+                    "apikey": key,
+                    "Content-Type": content_type,
+                    "x-upsert": "true",
+                    "cache-control": "3600",
+                },
+            )
+            if r.status_code not in (200, 201):
+                logger.warning(f"[plan-archive] upload failed {r.status_code}: {r.text[:120]}")
+                return None
+            public_url = f"{base}/storage/v1/object/public/plans/{path}"
+            # Merge into projets.plans_urls
+            try:
+                # Read current row
+                g = client.get(
+                    f"{base}/rest/v1/projets?id=eq.{project_id}&select=plans_urls",
+                    headers={"Authorization": f"Bearer {key}", "apikey": key},
+                )
+                current = {}
+                if g.status_code == 200 and g.json():
+                    current = g.json()[0].get("plans_urls") or {}
+                current[kind] = {"url": public_url, "updated_at": datetime.now(timezone.utc).isoformat()}
+                client.patch(
+                    f"{base}/rest/v1/projets?id=eq.{project_id}",
+                    json={"plans_urls": current},
+                    headers={
+                        "Authorization": f"Bearer {key}", "apikey": key,
+                        "Content-Type": "application/json",
+                        "Prefer": "return=minimal",
+                    },
+                )
+            except Exception as e:
+                logger.warning(f"[plan-archive] metadata patch failed: {e}")
+            return public_url
+    except Exception as e:
+        logger.warning(f"[plan-archive] error: {e}")
+        return None
 
 
 def _download_archi_pdf(url: str) -> str:

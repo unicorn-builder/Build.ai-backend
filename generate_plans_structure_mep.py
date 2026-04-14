@@ -77,49 +77,91 @@ def _cartouche(c, w, h, p, titre, pg, total, ech="1/100"):
     c.drawString(cx+c2+3*mm, cy+5*mm, f"Pl. {pg}/{total}")
 
 
-def _cartouche_pro(c, w, h, p, titre, pg, total, lot_label="", ech="1/100"):
-    """Enhanced cartouche with lot label, phase, and revision history."""
+def _cartouche_pro(c, w, h, p, titre, pg, total, lot_label="", ech="1/100",
+                   drawing_no=None, project_no=None, phase="APD"):
+    """Professional BET-style cartouche (Designed/Drawn/Checked + Project/Drawing No)."""
     cw, ch_ = 180*mm, 55*mm
     cx = w - cw - 8*mm; cy = 6*mm
-    c.setFillColor(BLANC); c.setStrokeColor(NOIR); c.setLineWidth(0.7)
+    c.setFillColor(BLANC); c.setStrokeColor(NOIR); c.setLineWidth(0.8)
     c.rect(cx, cy, cw, ch_, fill=1, stroke=1)
 
-    # Column dividers
-    c1, c2 = 38*mm, 108*mm
+    # Outer thick rule + inner thin rule for a proper drawing-border feel
     c.setLineWidth(0.3)
-    c.line(cx+c1, cy, cx+c1, cy+ch_)
-    c.line(cx+c2, cy, cx+c2, cy+ch_)
-    c.line(cx+c1, cy+ch_*0.6, cx+cw, cy+ch_*0.6)
-    c.line(cx, cy+ch_*0.3, cx+cw, cy+ch_*0.3)
+    # Horizontal bands
+    hb1 = cy + ch_ * 0.70   # top band (branding / project name / scale row)
+    hb2 = cy + ch_ * 0.40   # title band
+    hb3 = cy + ch_ * 0.20   # designed/drawn/checked band
+    c.line(cx, hb1, cx+cw, hb1)
+    c.line(cx, hb2, cx+cw, hb2)
+    c.line(cx, hb3, cx+cw, hb3)
+    # Column dividers
+    c1 = cx + 42*mm        # after Tijan branding
+    c2 = cx + 112*mm       # before scale/sheet column
+    c.line(c1, cy, c1, cy+ch_)
+    c.line(c2, cy, c2, cy+ch_)
+    # Designed/Drawn/Checked sub-columns within bottom band
+    sub_w = (c2 - c1) / 3.0
+    c.line(c1 + sub_w, cy, c1 + sub_w, hb3)
+    c.line(c1 + 2*sub_w, cy, c1 + 2*sub_w, hb3)
 
-    # Top left: Tijan branding
-    c.setFillColor(VERT); c.setFont("Helvetica-Bold", 10)
-    c.drawString(cx+3*mm, cy+ch_-9*mm, "TIJAN AI")
+    # ─ Top-left: Tijan branding ─
+    c.setFillColor(VERT); c.setFont("Helvetica-Bold", 11)
+    c.drawString(cx+3*mm, cy+ch_-10*mm, "TIJAN AI")
     c.setFillColor(GRIS3); c.setFont("Helvetica", 5.5)
-    c.drawString(cx+3*mm, cy+ch_-14*mm, "Engineering Intelligence")
-    c.drawString(cx+3*mm, cy+5*mm, f"Date: {datetime.now().strftime('%d/%m/%Y')}")
+    c.drawString(cx+3*mm, cy+ch_-14.5*mm, "Automated Engineering Bureau")
+    c.setFillColor(NOIR); c.setFont("Helvetica", 5.5)
+    c.drawString(cx+3*mm, hb2+1.5*mm, "support@tijan.ai")
+    c.drawString(cx+3*mm, hb3+1.5*mm, "www.tijan.ai")
+    c.setFillColor(GRIS3); c.setFont("Helvetica", 5)
+    c.drawString(cx+3*mm, cy+2*mm, f"{datetime.now().strftime('%d/%m/%Y')}")
 
-    # Middle left: Project + Lot label
+    # ─ Middle-top: Project name + city ─
+    c.setFillColor(NOIR); c.setFont("Helvetica-Bold", 9)
+    c.drawString(c1+3*mm, cy+ch_-10*mm, (p.get("nom") or "Projet")[:32])
+    c.setFillColor(GRIS2); c.setFont("Helvetica", 6)
+    c.drawString(c1+3*mm, cy+ch_-14.5*mm,
+                 f"{p.get('ville','Dakar')}, {p.get('pays','Sénégal')}")
+
+    # ─ Middle: Sheet title + lot label ─
+    c.setFillColor(VERT); c.setFont("Helvetica-Bold", 8)
+    c.drawString(c1+3*mm, hb2+3*mm, (titre or "")[:60])
+    c.setFillColor(GRIS2); c.setFont("Helvetica", 5.5)
+    c.drawString(c1+3*mm, hb2-3*mm, (lot_label or "")[:70])
+
+    # ─ Bottom band: Designed / Drawn / Checked ─
+    labels = [("DESIGNED", "TIJAN AI"),
+              ("DRAWN",    "TIJAN AI"),
+              ("CHECKED",  "TIJAN AI")]
+    for i, (lbl, val) in enumerate(labels):
+        xs = c1 + i * sub_w
+        c.setFillColor(GRIS3); c.setFont("Helvetica", 4.5)
+        c.drawString(xs+2*mm, hb3-3*mm, lbl)
+        c.setFillColor(NOIR); c.setFont("Helvetica-Bold", 6.5)
+        c.drawString(xs+2*mm, cy+2.5*mm, val)
+
+    # ─ Right column: Scale / Project No / Drawing No / Sheet ─
+    c.setFillColor(GRIS3); c.setFont("Helvetica", 4.5)
+    c.drawString(c2+2*mm, cy+ch_-5*mm, "SCALE")
     c.setFillColor(NOIR); c.setFont("Helvetica-Bold", 8)
-    c.drawString(cx+c1+3*mm, cy+ch_-9*mm, p.get("nom","Projet")[:25])
-    c.setFillColor(VERT); c.setFont("Helvetica-Bold", 6.5)
-    c.drawString(cx+c1+3*mm, cy+ch_-15*mm, lot_label[:40])
+    c.drawString(c2+2*mm, cy+ch_-10*mm, ech)
+    c.setFillColor(GRIS3); c.setFont("Helvetica", 4.5)
+    c.drawString(c2+2*mm, cy+ch_-14*mm, f"PHASE: {phase}")
 
-    # Top right: Scale, city, page
-    c.setFillColor(GRIS3); c.setFont("Helvetica", 6)
-    c.drawString(cx+c2+3*mm, cy+ch_-9*mm, f"Éch: {ech}")
-    c.drawString(cx+c2+3*mm, cy+ch_-14*mm, p.get("ville","Dakar"))
-    c.drawString(cx+c2+3*mm, cy+5*mm, f"Pl. {pg}/{total}")
+    c.setFillColor(GRIS3); c.setFont("Helvetica", 4.5)
+    c.drawString(c2+2*mm, hb2-3*mm, "PROJECT No")
+    c.setFillColor(NOIR); c.setFont("Helvetica-Bold", 7)
+    c.drawString(c2+2*mm, hb2-7.5*mm,
+                 (project_no or f"TJN-{(p.get('nom','PRJ') or 'PRJ')[:6].upper().replace(' ','_')}"))
 
-    # Middle: Plan title
-    c.setFillColor(VERT); c.setFont("Helvetica-Bold", 7)
-    c.drawString(cx+c1+3*mm, cy+ch_*0.45-3*mm, titre)
+    c.setFillColor(GRIS3); c.setFont("Helvetica", 4.5)
+    c.drawString(c2+2*mm, hb3-3*mm, "DRAWING No")
+    c.setFillColor(NOIR); c.setFont("Helvetica-Bold", 7)
+    c.drawString(c2+2*mm, hb3-7.5*mm, (drawing_no or f"PL-{pg:03d}"))
 
-    # Bottom: Phase + Revision
-    c.setFillColor(GRIS3); c.setFont("Helvetica-Bold", 5)
-    c.drawString(cx+c1+3*mm, cy+ch_*0.15+2*mm, "APD")
-    c.setFont("Helvetica", 4.5)
-    c.drawString(cx+c2+3*mm, cy+ch_*0.15+2*mm, "Rév. v1.0")
+    c.setFillColor(GRIS3); c.setFont("Helvetica", 4.5)
+    c.drawString(c2+2*mm, cy+5*mm, "SHEET")
+    c.setFillColor(NOIR); c.setFont("Helvetica-Bold", 8)
+    c.drawString(c2+2*mm, cy+1.5*mm, f"{pg} / {total}")
 
 
 def _build_grid(p):
@@ -180,6 +222,41 @@ def _draw_poteaux(c, ox, oy, sc, nx, ny, px_m, py_m, pot_s):
             xp = ox + i * px_m * sc
             yp = oy + j * py_m * sc
             c.setFillColor(NOIR); c.setStrokeColor(NOIR); c.setLineWidth(0.3)
+            c.rect(xp - pt_d/2, yp - pt_d/2, pt_d, pt_d, fill=1, stroke=1)
+
+
+def _overlay_axes_columns_in_bounds(c, ox, oy, gw, gh, nx, ny, pot_s):
+    """Draw subtle grid axes + column marks inside arbitrary bounds (ox, oy, gw, gh).
+
+    Used when a PDF archi background is rendered but no room geometry is
+    extracted — we still want a light structural grid anchored to the PDF
+    bounds so MEP equipment layout visually relates to the actual plan.
+    """
+    if gw <= 0 or gh <= 0 or nx < 1 or ny < 1:
+        return
+    dx = gw / nx
+    dy = gh / ny
+    # Dashed axes
+    c.setStrokeColor(GRIS4); c.setLineWidth(0.2); c.setDash(3, 3)
+    for i in range(nx + 1):
+        xp = ox + i * dx
+        c.line(xp, oy - 4*mm, xp, oy + gh + 4*mm)
+    for j in range(ny + 1):
+        yp = oy + j * dy
+        c.line(ox - 4*mm, yp, ox + gw + 4*mm, yp)
+    c.setDash()
+    # Axis labels
+    for i in range(nx + 1):
+        _axis_label(c, ox + i * dx, oy - 10*mm, str(i + 1))
+    for j in range(ny + 1):
+        _axis_label(c, ox - 10*mm, oy + j * dy, chr(65 + j))
+    # Columns at intersections
+    pt_d = max(min(dx, dy) * 0.04, 3)
+    c.setFillColor(NOIR); c.setStrokeColor(NOIR); c.setLineWidth(0.3)
+    for i in range(nx + 1):
+        for j in range(ny + 1):
+            xp = ox + i * dx
+            yp = oy + j * dy
             c.rect(xp - pt_d/2, yp - pt_d/2, pt_d, pt_d, fill=1, stroke=1)
 
 
@@ -916,13 +993,27 @@ def _legend(c, w, h, items):
 
 
 def _legend_pro(c, w, h, items, title="LÉGENDE"):
-    """Enhanced legend with bordered box and rich symbol support."""
-    lx = w - 62*mm; ly = h - 25*mm
+    """Enhanced legend with bordered box and rich symbol support.
+    Width is computed from the longest label so no text overflows the frame."""
+    # Compute label width with stringWidth, then add room for symbol + padding
+    from reportlab.pdfbase.pdfmetrics import stringWidth
+    LABEL_FONT = "Helvetica"; LABEL_SIZE = 5
+    TITLE_FONT = "Helvetica-Bold"; TITLE_SIZE = 6.5
+    def _lbl(it):
+        if isinstance(it, dict): return it.get('label','')
+        return it[2]
+    max_label_w = max((stringWidth(_lbl(it), LABEL_FONT, LABEL_SIZE) for it in items), default=0)
+    title_w = stringWidth(title, TITLE_FONT, TITLE_SIZE)
+    # Box width: 3mm left pad + 14pt symbol zone + 2pt gap + label + 3mm right pad
+    box_w_pt = 3*mm + 14 + 2 + max(max_label_w, title_w) + 3*mm
+    box_w_pt = max(box_w_pt, 58*mm)   # keep a minimum so small lists still read well
+    box_w_pt = min(box_w_pt, 110*mm)  # avoid overflowing the page
+    lx = w - box_w_pt - 2*mm; ly = h - 25*mm
     leg_h = min(len(items) * 10 + 16, 180*mm)
     c.setFillColor(BLANC); c.setStrokeColor(NOIR); c.setLineWidth(0.5)
-    c.rect(lx, ly - leg_h, 60*mm, leg_h, fill=1, stroke=1)
+    c.rect(lx, ly - leg_h, box_w_pt, leg_h, fill=1, stroke=1)
 
-    c.setFont("Helvetica-Bold", 6.5); c.setFillColor(VERT)
+    c.setFont(TITLE_FONT, TITLE_SIZE); c.setFillColor(VERT)
     c.drawString(lx + 3*mm, ly - 8*mm, title)
     ly_item = ly - 14*mm
 
@@ -1235,6 +1326,25 @@ def _bar_notation(as_cm2_ml):
     return f"HA{diam} esp.{esp}"
 
 
+def _bar_notation_bet(as_cm2_ml, length_m):
+    """BET-standard notation: '{count}-HA{Ø} (e={esp})'.
+    Matches French ferraillage convention (cf. réf. BET Sakho/Mar&Mor).
+    length_m = bay length perpendicular to the bars.
+    """
+    diam, esp, _ = _estimate_bar_from_as(as_cm2_ml)
+    # Nb of bars = (perpendicular length in m * 100cm) / spacing_cm, rounded up + 1
+    nb = max(2, int((length_m * 100.0) / max(esp, 1)) + 1)
+    return f"{nb}-HA{diam} (e={esp})"
+
+
+def _bar_chapeau_bet(as_cm2_ml, length_m):
+    """Chapeau notation: 'CH+Rep HA{Ø} (e={esp})'."""
+    diam, esp, _ = _estimate_bar_from_as(as_cm2_ml)
+    # Chapeaux use wider spacing (x1.5) in BET practice
+    esp_ch = int(esp * 1.5)
+    return f"CH+Rep HA{diam} (e={esp_ch})"
+
+
 def _draw_rebar_nomenclature(c, x, y, dalle, nx, ny, px_m, py_m):
     """Draw nomenclature table for rebar schedule (small table bottom-left)."""
     from reportlab.platypus import Table, TableStyle
@@ -1487,6 +1597,129 @@ def _pdf_bg_transforms(placement, pdf_h_pt):
 # PLANS STRUCTURE — même pattern que v4
 # ══════════════════════════════════════════
 
+def _draw_ferr_nomenclature_table(c, x, y, entries, page_w, filter_pos=None, max_rows=18):
+    """Draw BET-style nomenclature table at bottom of ferraillage sheet.
+    entries = list of tuples (rep, count, diam, esp, L_m, position).
+    filter_pos = 'inf' | 'sup' | None — only rows whose position contains this substring.
+    """
+    if not entries:
+        return
+    from reportlab.platypus import Table, TableStyle
+    from reportlab.lib import colors as rl_colors
+
+    # Deduplicate by repère (keep first occurrence of each rep/position)
+    seen = set()
+    rows = []
+    for rep, cnt, d, e, L, pos in entries:
+        if filter_pos and filter_pos not in pos.lower():
+            continue
+        key = (rep, pos)
+        if key in seen: continue
+        seen.add(key)
+        rows.append([str(rep), str(cnt), f"HA{d}", f"{e}", f"{L:.2f}", pos])
+        if len(rows) >= max_rows: break
+
+    if not rows: return
+
+    header = ["Rep.", "Nb", "Ø", "Esp. (cm)", "L (m)", "Position"]
+    data = [header] + rows
+    col_w = [10*mm, 10*mm, 12*mm, 16*mm, 14*mm, 34*mm]
+    table = Table(data, colWidths=col_w, rowHeights=[5*mm] + [3.5*mm]*len(rows))
+    table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), rl_colors.HexColor("#43A956")),
+        ('TEXTCOLOR', (0, 0), (-1, 0), BLANC),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 5),
+        ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+        ('FONTSIZE', (0, 1), (-1, -1), 4.5),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('ALIGN', (5, 1), (5, -1), 'LEFT'),
+        ('LEFTPADDING', (0, 0), (-1, -1), 2),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 2),
+        ('TOPPADDING', (0, 0), (-1, -1), 0.5),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 0.5),
+        ('GRID', (0, 0), (-1, -1), 0.25, GRIS3),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [BLANC, rl_colors.HexColor("#F5F7F5")]),
+    ]))
+    tw = sum(col_w)
+    th = 5*mm + 3.5*mm * len(rows)
+    # Title above the table
+    c.setFillColor(NOIR); c.setFont("Helvetica-Bold", 6.5)
+    c.drawString(x, y + th + 2*mm, "NOMENCLATURE ARMATURES (extrait)")
+    table.wrapOn(c, tw, th)
+    table.drawOn(c, x, y)
+
+
+def _draw_coupe_type_dalle(c, w, h, dalle, pp_b, pp_h):
+    """Typical section cut showing top/bottom reinforcement layers + cover + support chapeau."""
+    # Centered large section drawing
+    cx0, cy0 = w * 0.20, h * 0.35
+    scale = 40.0  # 1 cm -> 40 pt (big detail drawing)
+    ep_cm = dalle.epaisseur_mm / 10.0
+    L_cm = 320  # 3.2 m section width for display
+    enrobage_cm = 3.0
+
+    # Draw concrete slab rectangle
+    x0 = cx0; y0 = cy0
+    W = L_cm * scale / 10 * 0.6  # compressed horizontally
+    H = ep_cm * scale / 2
+    c.setFillColor(GRIS5); c.setStrokeColor(NOIR); c.setLineWidth(0.8)
+    c.rect(x0, y0, W, H, fill=1, stroke=1)
+
+    # Support beams at each end
+    beam_w = pp_b / 10 * scale / 4
+    beam_h = pp_h / 10 * scale / 4
+    c.setFillColor(GRIS4); c.setLineWidth(0.6)
+    c.rect(x0 - beam_w*0.5, y0 - beam_h*0.5, beam_w, beam_h + H*0.5, fill=1, stroke=1)
+    c.rect(x0 + W - beam_w*0.5, y0 - beam_h*0.5, beam_w, beam_h + H*0.5, fill=1, stroke=1)
+
+    # Bottom reinforcement — 1st layer
+    c.setStrokeColor(ROUGE); c.setLineWidth(0.9)
+    y_inf1 = y0 + enrobage_cm * scale / 10
+    c.line(x0 + 4, y_inf1, x0 + W - 4, y_inf1)
+    # bars as dots seen in section
+    for k in range(8):
+        xb = x0 + 8 + k * (W - 16) / 7
+        c.setFillColor(ROUGE); c.circle(xb, y_inf1, 1.5, fill=1, stroke=0)
+
+    # Top reinforcement — chapeau near supports
+    c.setStrokeColor(colors.HexColor("#66BB6A")); c.setLineWidth(0.8)
+    y_sup = y0 + H - enrobage_cm * scale / 10
+    c.line(x0 + 4, y_sup, x0 + W * 0.28, y_sup)
+    c.line(x0 + W * 0.72, y_sup, x0 + W - 4, y_sup)
+    for xr in [x0 + 8, x0 + W * 0.18, x0 + W * 0.78, x0 + W - 8]:
+        c.setFillColor(colors.HexColor("#66BB6A")); c.circle(xr, y_sup, 1.3, fill=1, stroke=0)
+
+    # Top continuous reinforcement — 2e lit sup
+    c.setStrokeColor(VIOLET); c.setLineWidth(0.4); c.setDash(2, 1.5)
+    y_sup2 = y_sup - 2
+    c.line(x0 + 10, y_sup2, x0 + W - 10, y_sup2)
+    c.setDash()
+
+    # Dimension arrows + labels
+    c.setFillColor(NOIR); c.setFont("Helvetica", 6)
+    c.drawString(x0 + W + 5, y_inf1 - 2, f"1er lit inf (enrobage {int(enrobage_cm*10)} mm)")
+    c.drawString(x0 + W + 5, y_sup - 2, f"CH + 1er lit sup")
+    c.drawString(x0 + W + 5, y_sup2 - 2, f"2e lit sup (continu)")
+
+    # Vertical dimension of slab thickness
+    c.setStrokeColor(NOIR); c.setLineWidth(0.3)
+    xd = x0 - 14
+    c.line(xd, y0, xd, y0 + H)
+    c.line(xd - 2, y0, xd + 2, y0)
+    c.line(xd - 2, y0 + H, xd + 2, y0 + H)
+    c.setFillColor(NOIR); c.setFont("Helvetica-Bold", 7)
+    c.drawRightString(xd - 3, y0 + H/2 - 2, f"{int(dalle.epaisseur_mm)} mm")
+
+    # Legend
+    ly = y0 - 24
+    c.setFillColor(NOIR); c.setFont("Helvetica-Bold", 8)
+    c.drawString(x0, ly, "COUPE A-A — Détail ferraillage type dalle pleine")
+    c.setFont("Helvetica", 6); c.setFillColor(GRIS2)
+    c.drawString(x0, ly - 9, f"Épaisseur {int(dalle.epaisseur_mm)} mm · Béton classe projet · Enrobage 30 mm (50 mm en fondation)")
+    c.drawString(x0, ly - 17, "1er lit inf (rouge) · CH + 1er lit sup (vert) · 2e lit sup continu (violet pointillé)")
+
+
 def generer_plans_structure(output_path, resultats=None, params=None, dwg_geometry=None, archi_pdf_path=None, **kw):
     """
     Plans structure. Trois modes (par ordre de priorité) :
@@ -1551,7 +1784,8 @@ def generer_plans_structure(output_path, resultats=None, params=None, dwg_geomet
         level_names.append(f"Étage courant" if nb_etages > 1 else "Étage 1")
     level_names.append("Terrasse")
 
-    total_pages = len(level_names) + 5  # +ferraillage dalle + fondations + coupe + ferraillage poutre + ferraillage poteau
+    # per-level coffrage + (ferr INF + ferr SUP + coupe type dalle) + fondations + coupe bât + ferr poutre + ferr poteau
+    total_pages = len(level_names) + 7
     page = 0
 
     c = pdfcanvas.Canvas(output_path, pagesize=A3L)
@@ -1682,11 +1916,14 @@ def generer_plans_structure(output_path, resultats=None, params=None, dwg_geomet
         _cartouche_pro(c, w, h, p, f"COFFRAGE — {level_name}", page, total_pages, "STRUCTURE BÉTON ARMÉ")
         c.showPage()
 
-    # ── FERRAILLAGE DALLE ──
+    # ── FERRAILLAGE DALLE — NAPPE INFÉRIEURE (planche B14 / 12B style) ──
     page += 1
     w, h = A3L; c.setPageSize(A3L); _border(c, w, h)
     c.setFillColor(NOIR); c.setFont("Helvetica-Bold", 13)
-    c.drawString(14*mm, h - 17*mm, "FERRAILLAGE DALLE — NIVEAU COURANT")
+    c.drawString(14*mm, h - 17*mm, "FERRAILLAGE INFÉRIEUR DALLE — PH NIVEAU COURANT")
+    # Accumulator for repère nomenclature (shared across INF + SUP pages)
+    _ferr_repere_counter = [0]
+    _ferr_nomenclature = []  # list of tuples (rep, count, diam, esp, long_m, position)
 
     lvl_geom = dwg_levels.get('Étage courant') or dwg_levels.get('Rez-de-Chaussée')
     has_geom_d = lvl_geom and len(lvl_geom.get('walls', [])) >= 5
@@ -1780,10 +2017,37 @@ def generer_plans_structure(output_path, resultats=None, params=None, dwg_geomet
                     xb = sx + 3 + k * (sw - 6) / max(nb_y - 1, 1)
                     c.line(xb, sy_a + 2, xb, sy_a + sh - 2)
                 c.restoreState()
-                if sw > 10 and sh > 10:
-                    c.setFillColor(NOIR); c.setFont("Helvetica", 2.5)
-                    c.drawCentredString(cx_p, cy_p + 2, f"X: {_bar_notation(dalle.As_x_cm2_ml)}")
-                    c.drawCentredString(cx_p, cy_p - 3, f"Y: {_bar_notation(dalle.As_y_cm2_ml)}")
+                if sw > 14 and sh > 14:
+                    # BET-standard panel annotation: count-HA(e=) / 1er lit inf + chapeau
+                    # Estimate panel dimensions in metres (real axes are in mm)
+                    px_bay = abs(real_ax_d[i+1] - real_ax_d[i]) / 1000.0
+                    py_bay = abs(real_ay_d[j+1] - real_ay_d[j]) / 1000.0
+                    lbl_x_inf = _bar_notation_bet(dalle.As_x_cm2_ml, py_bay)
+                    lbl_y_inf = _bar_notation_bet(dalle.As_y_cm2_ml, px_bay)
+                    # Repère circled number (as in réf. BET: 1, 2, 3... 76)
+                    _ferr_repere_counter[0] += 1
+                    rep_n = _ferr_repere_counter[0]
+                    diam_x, esp_x, _ = _estimate_bar_from_as(dalle.As_x_cm2_ml)
+                    diam_y, esp_y, _ = _estimate_bar_from_as(dalle.As_y_cm2_ml)
+                    nb_x_bars = max(2, int(py_bay * 100 / esp_x) + 1)
+                    nb_y_bars = max(2, int(px_bay * 100 / esp_y) + 1)
+                    _ferr_nomenclature.append((rep_n, nb_x_bars, diam_x, esp_x, py_bay, "1er lit inf X"))
+                    _ferr_nomenclature.append((rep_n, nb_y_bars, diam_y, esp_y, px_bay, "1er lit inf Y"))
+                    # Draw circled repère number
+                    c.setFillColor(BLANC); c.setStrokeColor(ROUGE); c.setLineWidth(0.5)
+                    c.circle(sx + 4, sy_a + sh - 4, 3, fill=1, stroke=1)
+                    c.setFillColor(ROUGE); c.setFont("Helvetica-Bold", 3.5)
+                    tw = c.stringWidth(str(rep_n), "Helvetica-Bold", 3.5)
+                    c.drawString(sx + 4 - tw/2, sy_a + sh - 5.2, str(rep_n))
+                    # Labels
+                    c.setFillColor(NOIR); c.setFont("Helvetica-Bold", 3.2)
+                    c.drawCentredString(cx_p, cy_p + 5, lbl_x_inf)
+                    c.setFont("Helvetica", 2.6); c.setFillColor(GRIS2)
+                    c.drawCentredString(cx_p, cy_p + 2.2, "1er lit inf X")
+                    c.setFillColor(NOIR); c.setFont("Helvetica-Bold", 3.2)
+                    c.drawCentredString(cx_p, cy_p - 1.5, lbl_y_inf)
+                    c.setFont("Helvetica", 2.6); c.setFillColor(GRIS2)
+                    c.drawCentredString(cx_p, cy_p - 4.2, "1er lit inf Y")
     elif not rendered_dalle:
         for i in range(nx):
             for j in range(ny):
@@ -1800,21 +2064,166 @@ def generer_plans_structure(output_path, resultats=None, params=None, dwg_geomet
                 for k in range(nb_y):
                     xb = sx + 4 + k * (sw - 8) / max(nb_y - 1, 1)
                     c.line(xb, sy + 3, xb, sy + sh - 3)
-                c.setFillColor(NOIR); c.setFont("Helvetica", 3.5)
-                c.drawCentredString(cx_p, cy_p + 3, f"X: {_bar_notation(dalle.As_x_cm2_ml)}")
-                c.drawCentredString(cx_p, cy_p - 3, f"Y: {_bar_notation(dalle.As_y_cm2_ml)}")
+                # BET-standard panel annotation
+                lbl_x_inf = _bar_notation_bet(dalle.As_x_cm2_ml, py_m)
+                lbl_y_inf = _bar_notation_bet(dalle.As_y_cm2_ml, px_m)
+                lbl_ch    = _bar_chapeau_bet(max(dalle.As_x_cm2_ml, dalle.As_y_cm2_ml), min(px_m, py_m))
+                c.setFillColor(NOIR); c.setFont("Helvetica-Bold", 4)
+                c.drawCentredString(cx_p, cy_p + 6, lbl_x_inf)
+                c.setFont("Helvetica", 3); c.setFillColor(GRIS2)
+                c.drawCentredString(cx_p, cy_p + 3, "1er lit inf X")
+                c.setFillColor(NOIR); c.setFont("Helvetica-Bold", 4)
+                c.drawCentredString(cx_p, cy_p - 1, lbl_y_inf)
+                c.setFont("Helvetica", 3); c.setFillColor(GRIS2)
+                c.drawCentredString(cx_p, cy_p - 4, "1er lit inf Y")
+                c.setFillColor(VIOLET); c.setFont("Helvetica-Bold", 3.5)
+                c.drawString(sx + 3, sy + sh - 5, lbl_ch)
 
     _legend_pro(c, w, h, [
-        (ROUGE, 0.5, f"Nappe inf. X — {_bar_notation(dalle.As_x_cm2_ml)} (As={dalle.As_x_cm2_ml:.2f} cm²/ml)"),
-        (BLEU, 0.4, f"Nappe inf. Y — {_bar_notation(dalle.As_y_cm2_ml)} (As={dalle.As_y_cm2_ml:.2f} cm²/ml)"),
-        (colors.HexColor("#66BB6A"), 0.5, "Chapeaux d'appui X — Nappe supérieure"),
-        (VIOLET, 0.5, "Chapeaux d'appui Y — Nappe supérieure"),
+        (ROUGE, 0.5, f"1er lit inf. X — {_bar_notation(dalle.As_x_cm2_ml)} (As={dalle.As_x_cm2_ml:.2f} cm²/ml)"),
+        (BLEU, 0.4, f"1er lit inf. Y — {_bar_notation(dalle.As_y_cm2_ml)} (As={dalle.As_y_cm2_ml:.2f} cm²/ml)"),
+        (GRIS2, 0.2, "2e lit inf. — Renforts locaux en zone de moment max."),
         (NOIR, 'fill', f"Poteau {pot_s}×{pot_s}mm"),
-    ], "FERRAILLAGE DALLE")
+        (ROUGE, 'fill', "Repères armatures (cf. nomenclature bas de planche)"),
+    ], "FERRAILLAGE INFÉRIEUR")
 
-    # Add nomenclature table for rebar schedule
-    _draw_rebar_nomenclature(c, 14*mm, 42*mm, dalle, nx, ny, px_m, py_m)
-    _cartouche_pro(c, w, h, p, "FERRAILLAGE DALLE", page, total_pages, "FERRAILLAGE BÉTON")
+    # Nomenclature table — repères accumulated from panels
+    _draw_ferr_nomenclature_table(c, 14*mm, 42*mm, _ferr_nomenclature, w)
+    _cartouche_pro(c, w, h, p, "FERRAILLAGE INF. DALLE", page, total_pages,
+                   "LOT 01 — STRUCTURE / FERRAILLAGE B.A.",
+                   drawing_no=f"TJN-STR-FER-INF-{page:03d}")
+    c.showPage()
+
+    # ── FERRAILLAGE DALLE — NAPPE SUPÉRIEURE (planche A15 / 13B style) ──
+    page += 1
+    w, h = A3L; c.setPageSize(A3L); _border(c, w, h)
+    c.setFillColor(NOIR); c.setFont("Helvetica-Bold", 13)
+    c.drawString(14*mm, h - 17*mm, "FERRAILLAGE SUPÉRIEUR DALLE — PH NIVEAU COURANT")
+
+    # Re-render the architectural/DWG background (same modes as INF)
+    rendered_sup = False; sup_tx = sup_ty = None
+    real_ax_s = []; real_ay_s = []
+    if archi_pdf_path and (is_from_pdf_d or not has_geom_d):
+        ok, placement = _render_pdf_background(c, archi_pdf_path, 0, w, h, opacity=0.75, dpi=200, grayscale=True)
+        if ok and placement and has_geom_d:
+            real_ax_s = lvl_geom.get('axes_x', [])
+            real_ay_s = lvl_geom.get('axes_y', [])
+            if real_ax_s and real_ay_s and placement.get('pdf_h_pt'):
+                sup_tx, sup_ty, _ = _pdf_bg_transforms(placement, placement['pdf_h_pt'])
+                c.saveState(); c.setStrokeAlpha(0.4)
+                c.setStrokeColor(GRIS4); c.setLineWidth(0.3); c.setDash(4, 2)
+                for ax in real_ax_s:
+                    c.line(sup_tx(ax), sup_ty(real_ay_s[0])-5*mm, sup_tx(ax), sup_ty(real_ay_s[-1])+5*mm)
+                for ay in real_ay_s:
+                    c.line(sup_tx(real_ax_s[0])-5*mm, sup_ty(ay), sup_tx(real_ax_s[-1])+5*mm, sup_ty(ay))
+                c.setDash(); c.restoreState()
+                for ax in real_ax_s:
+                    for ay in real_ay_s:
+                        c.setFillColor(NOIR); c.setStrokeColor(NOIR); c.setLineWidth(0.3)
+                        c.rect(sup_tx(ax)-2.5, sup_ty(ay)-2.5, 5, 5, fill=1, stroke=1)
+                rendered_sup = True
+    if not rendered_sup and has_geom_d:
+        dtx2, dty2, dsc2, _, _ = _dwg_layout(w, h, lvl_geom)
+        if dtx2:
+            _draw_dwg(c, lvl_geom, dtx2, dty2, sc=dsc2)
+            real_ax_s = lvl_geom.get('axes_x', [])
+            real_ay_s = lvl_geom.get('axes_y', [])
+            sup_tx, sup_ty = dtx2, dty2
+            if real_ax_s and real_ay_s:
+                c.setStrokeColor(GRIS4); c.setLineWidth(0.25); c.setDash(4, 2)
+                for ax in real_ax_s:
+                    c.line(dtx2(ax), dty2(real_ay_s[0])-6*mm, dtx2(ax), dty2(real_ay_s[-1])+6*mm)
+                for ay in real_ay_s:
+                    c.line(dtx2(real_ax_s[0])-6*mm, dty2(ay), dtx2(real_ax_s[-1])+6*mm, dty2(ay))
+                c.setDash()
+                for ax in real_ax_s:
+                    for ay in real_ay_s:
+                        c.setFillColor(NOIR); c.setStrokeColor(NOIR); c.setLineWidth(0.3)
+                        c.rect(dtx2(ax)-2, dty2(ay)-2, 4, 4, fill=1, stroke=1)
+                rendered_sup = True
+    if not rendered_sup:
+        ox2, oy2, sc2, gw2, gh2 = _grid_layout(w, h, nx, ny, px_m, py_m)
+        _draw_grid_axes(c, ox2, oy2, sc2, nx, ny, px_m, py_m, gw2, gh2)
+        _draw_poteaux(c, ox2, oy2, sc2, nx, ny, px_m, py_m, pot_s)
+        _draw_chapeau_indicators(c, ox2, oy2, sc2, nx, ny, px_m, py_m)
+
+    # SUP annotations per panel — chapeaux primary, "CH+Rep" notation
+    if rendered_sup and real_ax_s and real_ay_s and sup_tx:
+        for i in range(len(real_ax_s) - 1):
+            for j in range(len(real_ay_s) - 1):
+                sx = sup_tx(real_ax_s[i]) + 2
+                sy_b = min(sup_ty(real_ay_s[j]), sup_ty(real_ay_s[j+1])) + 2
+                sw = abs(sup_tx(real_ax_s[i+1]) - sup_tx(real_ax_s[i])) - 4
+                sh = abs(sup_ty(real_ay_s[j+1]) - sup_ty(real_ay_s[j])) - 4
+                if sw < 5 or sh < 5: continue
+                cx_p = sx + sw/2; cy_p = sy_b + sh/2
+                # Chapeau bars (green for X, violet for Y) spanning ~1/4 panel near supports
+                c.saveState(); c.setStrokeAlpha(0.55)
+                c.setStrokeColor(colors.HexColor("#66BB6A")); c.setLineWidth(0.4)
+                n_ch_x = max(2, int(sh / 10))
+                for k in range(n_ch_x):
+                    yb = sy_b + 3 + k * (sh - 6) / max(n_ch_x - 1, 1)
+                    # Two band segments near the two supports
+                    c.line(sx + 2, yb, sx + sw * 0.28, yb)
+                    c.line(sx + sw * 0.72, yb, sx + sw - 2, yb)
+                c.setStrokeColor(VIOLET); c.setLineWidth(0.35)
+                n_ch_y = max(2, int(sw / 10))
+                for k in range(n_ch_y):
+                    xb = sx + 3 + k * (sw - 6) / max(n_ch_y - 1, 1)
+                    c.line(xb, sy_b + 2, xb, sy_b + sh * 0.28)
+                    c.line(xb, sy_b + sh * 0.72, xb, sy_b + sh - 2)
+                c.restoreState()
+                if sw > 14 and sh > 14:
+                    px_bay = abs(real_ax_s[i+1] - real_ax_s[i]) / 1000.0
+                    py_bay = abs(real_ay_s[j+1] - real_ay_s[j]) / 1000.0
+                    lbl_ch_x = _bar_chapeau_bet(dalle.As_x_cm2_ml, py_bay)
+                    lbl_ch_y = _bar_chapeau_bet(dalle.As_y_cm2_ml, px_bay)
+                    _ferr_repere_counter[0] += 1
+                    rep_n = _ferr_repere_counter[0]
+                    d_cx, e_cx, _ = _estimate_bar_from_as(dalle.As_x_cm2_ml)
+                    d_cy, e_cy, _ = _estimate_bar_from_as(dalle.As_y_cm2_ml)
+                    _ferr_nomenclature.append((rep_n, max(2, int(py_bay*100/max(int(e_cx*1.5),1))+1),
+                                               d_cx, int(e_cx*1.5), py_bay, "CH+Rep lit sup X"))
+                    _ferr_nomenclature.append((rep_n, max(2, int(px_bay*100/max(int(e_cy*1.5),1))+1),
+                                               d_cy, int(e_cy*1.5), px_bay, "CH+Rep lit sup Y"))
+                    c.setFillColor(BLANC); c.setStrokeColor(VIOLET); c.setLineWidth(0.5)
+                    c.circle(sx + 4, sy_b + sh - 4, 3, fill=1, stroke=1)
+                    c.setFillColor(VIOLET); c.setFont("Helvetica-Bold", 3.5)
+                    tw = c.stringWidth(str(rep_n), "Helvetica-Bold", 3.5)
+                    c.drawString(sx + 4 - tw/2, sy_b + sh - 5.2, str(rep_n))
+                    c.setFillColor(NOIR); c.setFont("Helvetica-Bold", 3.2)
+                    c.drawCentredString(cx_p, cy_p + 5, lbl_ch_x)
+                    c.setFont("Helvetica", 2.6); c.setFillColor(GRIS2)
+                    c.drawCentredString(cx_p, cy_p + 2.2, "CH 1er lit sup X")
+                    c.setFillColor(NOIR); c.setFont("Helvetica-Bold", 3.2)
+                    c.drawCentredString(cx_p, cy_p - 1.5, lbl_ch_y)
+                    c.setFont("Helvetica", 2.6); c.setFillColor(GRIS2)
+                    c.drawCentredString(cx_p, cy_p - 4.2, "CH 1er lit sup Y")
+
+    _legend_pro(c, w, h, [
+        (colors.HexColor("#66BB6A"), 0.5, f"Chapeau X — {_bar_chapeau_bet(dalle.As_x_cm2_ml, py_m)}"),
+        (VIOLET, 0.5, f"Chapeau Y — {_bar_chapeau_bet(dalle.As_y_cm2_ml, px_m)}"),
+        (GRIS2, 0.2, "2e lit sup. — Renforts sur appuis continus"),
+        (NOIR, 'fill', f"Poteau {pot_s}×{pot_s}mm"),
+        (VIOLET, 'fill', "Repères armatures supérieures"),
+    ], "FERRAILLAGE SUPÉRIEUR")
+
+    _draw_ferr_nomenclature_table(c, 14*mm, 42*mm, _ferr_nomenclature, w,
+                                   filter_pos="sup")
+    _cartouche_pro(c, w, h, p, "FERRAILLAGE SUP. DALLE", page, total_pages,
+                   "LOT 01 — STRUCTURE / FERRAILLAGE B.A.",
+                   drawing_no=f"TJN-STR-FER-SUP-{page:03d}")
+    c.showPage()
+
+    # ── COUPE TYPE DALLE — lit inf / lit sup / chapeau / enrobage ──
+    page += 1
+    w, h = A3L; c.setPageSize(A3L); _border(c, w, h)
+    c.setFillColor(NOIR); c.setFont("Helvetica-Bold", 13)
+    c.drawString(14*mm, h - 17*mm, "COUPE TYPE DALLE — DÉTAIL FERRAILLAGE A-A")
+    _draw_coupe_type_dalle(c, w, h, dalle, pp_b, pp_h)
+    _cartouche_pro(c, w, h, p, "COUPE TYPE DALLE", page, total_pages,
+                   "LOT 01 — DÉTAIL FERRAILLAGE",
+                   drawing_no=f"TJN-STR-COUP-{page:03d}")
     c.showPage()
 
     # ── FONDATIONS ──
@@ -2114,6 +2523,506 @@ def generer_plans_structure(output_path, resultats=None, params=None, dwg_geomet
 
 
 # ══════════════════════════════════════════
+# MEP HELPERS — drawing_no, nomenclature, schémas de principe
+# ══════════════════════════════════════════
+
+# Normalized MEP lot codes for drawing number conventions (BET standard)
+_MEP_LOT_CODES = {
+    "plb_ef":   ("PLB-EF",  "PLOMBERIE Eau Froide"),
+    "plb_ec":   ("PLB-EC",  "PLOMBERIE Eau Chaude"),
+    "plb_eu":   ("PLB-EU",  "PLOMBERIE Évacuations"),
+    "elec_ecl": ("ELE-ECL", "ÉLECTRICITÉ Éclairage"),
+    "elec_dist":("ELE-DIS", "ÉLECTRICITÉ Prises & TGBT"),
+    "cvc_clim": ("CVC-CLM", "CVC Climatisation"),
+    "cvc_vmc":  ("CVC-VMC", "CVC Ventilation"),
+    "ssi_det":  ("SSI-DET", "SSI Détection"),
+    "ssi_ext":  ("SSI-EXT", "SSI Extinction"),
+    "cfa":      ("CFA-RES", "Courants Faibles"),
+    "asc_plan": ("ASC-PLN", "Ascenseurs"),
+    "gtb":      ("GTB-BUS", "GTB Automatisation"),
+}
+
+_LEVEL_CODE_MAP = {
+    "Sous-Sol": "SS",
+    "Sous-Sol / Parking": "SS",
+    "RDC": "R0",
+    "Rez-de-Chaussée": "R0",
+    "Terrasse": "TR",
+}
+
+def _level_code(level_label):
+    """Convert level label to short code for drawing_no."""
+    if level_label in _LEVEL_CODE_MAP:
+        return _LEVEL_CODE_MAP[level_label]
+    lab = (level_label or "").lower()
+    if "sous" in lab: return "SS"
+    if "terrasse" in lab: return "TR"
+    if "rdc" in lab: return "R0"
+    # Try to extract étage number
+    import re as _re_lvl
+    m = _re_lvl.search(r"(\d+)", level_label or "")
+    if m:
+        return f"E{int(m.group(1)):02d}"
+    return "CR"  # courant
+
+def _mep_drawing_no(key, level_label, page):
+    """Build normalized BET drawing number: TJN-MEP-{LOT}-{LVL}-{PG:03d}"""
+    lot_code = _MEP_LOT_CODES.get(key, ("MEP", ""))[0]
+    lvl_code = _level_code(level_label)
+    return f"TJN-MEP-{lot_code}-{lvl_code}-{page:03d}"
+
+
+def _draw_mep_nomenclature_table(c, x, y, entries, title="NOMENCLATURE ÉQUIPEMENTS"):
+    """BET-style equipment nomenclature table.
+    entries = list of tuples (rep, desig, qty, unit, norme).
+    """
+    if not entries:
+        return
+    from reportlab.platypus import Table, TableStyle
+    from reportlab.lib import colors as rl_colors
+
+    header = ["Rep.", "Désignation", "Qté", "Unité", "Norme/DTU"]
+    data = [header] + [[str(e[0]), str(e[1])[:32], str(e[2]), str(e[3]), str(e[4])[:14]] for e in entries[:14]]
+    col_w = [9*mm, 52*mm, 10*mm, 10*mm, 22*mm]
+    table = Table(data, colWidths=col_w, rowHeights=[5*mm] + [3.6*mm]*(len(data)-1))
+    table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), rl_colors.HexColor("#43A956")),
+        ('TEXTCOLOR', (0, 0), (-1, 0), BLANC),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 5),
+        ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+        ('FONTSIZE', (0, 1), (-1, -1), 4.5),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('ALIGN', (1, 1), (1, -1), 'LEFT'),
+        ('LEFTPADDING', (0, 0), (-1, -1), 2),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 2),
+        ('TOPPADDING', (0, 0), (-1, -1), 0.5),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 0.5),
+        ('GRID', (0, 0), (-1, -1), 0.25, GRIS3),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [BLANC, rl_colors.HexColor("#F5F7F5")]),
+    ]))
+    tw = sum(col_w)
+    th = 5*mm + 3.6*mm * (len(data)-1)
+    c.setFillColor(NOIR); c.setFont("Helvetica-Bold", 6.5)
+    c.drawString(x, y + th + 2*mm, title)
+    table.wrapOn(c, tw, th)
+    table.drawOn(c, x, y)
+
+
+def _build_mep_nomenclature(key, pl, el, cv, cf, si, asc, aut):
+    """Build per-lot equipment nomenclature from MEP results."""
+    if key == "plb_ef":
+        return [
+            ("1", f"Citerne eau potable {int(pl.volume_citerne_m3)}m³", 1, "U", "DTU 60.11"),
+            ("2", f"Surpresseur {pl.debit_surpresseur_m3h}m³/h", 1, "U", "NF EN 12845"),
+            ("3", f"Colonne montante EF DN{pl.diam_colonne_montante_mm}", 1, "U", "DTU 60.11"),
+            ("4", "Robinet économiseur", pl.nb_robinets_eco, "U", "NF EDGE v3"),
+            ("5", "WC double chasse 3/6L", pl.nb_wc_double_chasse, "U", "EDGE v3"),
+        ]
+    if key == "plb_ec":
+        return [
+            ("1", f"Chauffe-eau solaire individuel CESI", pl.nb_chauffe_eau_solaire, "U", "NF EN 12976"),
+            ("2", "Colonne montante ECS DN32", 1, "U", "DTU 60.11"),
+            ("3", "Circulation ECS DN16", 1, "U", "DTU 60.11"),
+        ]
+    if key == "plb_eu":
+        return [
+            ("1", "Chute EU DN100 PVC", 1, "U", "DTU 60.33"),
+            ("2", "Chute EP DN75 PVC", 1, "U", "DTU 60.11"),
+            ("3", f"Conso annuelle {pl.conso_eau_annuelle_m3:.0f}m³/an", 1, "-", "EDGE v3"),
+        ]
+    if key == "elec_ecl":
+        return [
+            ("1", "Plafonnier LED encastré 18W", 1, "U", "NF C 15-100"),
+            ("2", "Interrupteur simple allumage", 1, "U", "NF C 15-100"),
+            ("3", "Interrupteur VA-ET-VIENT", 1, "U", "NF C 15-100"),
+            ("4", "Détecteur de mouvement", 1, "U", "NF C 15-100"),
+            ("5", f"Puissance éclairage total {el.puissance_eclairage_kw:.1f}kW", 1, "-", "NF C 15-100"),
+        ]
+    if key == "elec_dist":
+        return [
+            ("1", f"Transformateur HT/BT {el.transfo_kva}kVA", 1, "U", "NF C 13-100"),
+            ("2", f"Groupe électrogène {el.groupe_electrogene_kva}kVA", 1, "U", "NF C 15-401"),
+            ("3", f"TGBT 4P+N / {el.nb_compteurs} départs", 1, "U", "NF C 15-100"),
+            ("4", f"Colonne montante {el.section_colonne_mm2}mm²", 1, "U", "NF C 14-100"),
+            ("5", "Prise 2P+T 16A NF", 1, "U", "NF C 15-100"),
+            ("6", "Prise spécialisée 20A", 1, "U", "NF C 15-100"),
+        ]
+    if key == "cvc_clim":
+        return [
+            ("1", "Split mural 18000 BTU (séjour)", cv.nb_splits_sejour, "U", "NF EN 14511"),
+            ("2", "Split mural 12000 BTU (chambre)", cv.nb_splits_chambre, "U", "NF EN 14511"),
+            ("3", f"Puissance frigorifique {cv.puissance_frigorifique_kw:.0f}kW", 1, "-", "EDGE v3"),
+        ]
+    if key == "cvc_vmc":
+        return [
+            ("1", f"VMC {cv.type_vmc}", cv.nb_vmc, "U", "DTU 68.3"),
+            ("2", "Bouche soufflage", 1, "U", "DTU 68.3"),
+            ("3", "Bouche extraction", 1, "U", "DTU 68.3"),
+        ]
+    if key == "ssi_det":
+        return [
+            ("1", "Détecteur de fumée (DF) optique", si.nb_detecteurs_fumee, "U", "NF EN 54-7"),
+            ("2", "Déclencheur manuel (DM) rouge", si.nb_declencheurs_manuels, "U", "NF EN 54-11"),
+            ("3", f"Centrale SSI / {si.centrale_zones} zones", 1, "U", "NF EN 54-2"),
+            ("4", f"Catégorie ERP {si.categorie_erp}", 1, "-", "IT 246"),
+        ]
+    if key == "ssi_ext":
+        return [
+            ("1", "RIA DN33 - robinet incendie armé", max(1, int(si.longueur_ria_ml // 25)), "U", "NF EN 671-1"),
+            ("2", "BAES - bloc autonome éclairage", 1, "U", "NF C 71-800"),
+            ("3", "Extincteur poudre ABC 6kg", si.nb_extincteurs_poudre, "U", "NF EN 3-7"),
+            ("4", "Extincteur CO2 2kg", si.nb_extincteurs_co2, "U", "NF EN 3-7"),
+            ("5", f"Sprinklers: {'OUI' if si.sprinklers_requis else 'NON'}", 1, "-", "NF EN 12845"),
+        ]
+    if key == "cfa":
+        return [
+            ("1", "Prise RJ45 Cat. 6A", cf.nb_prises_rj45, "U", "NF EN 50173"),
+            ("2", "Caméra IP intérieure", cf.nb_cameras_int, "U", "NF EN 62676"),
+            ("3", "Caméra IP extérieure IP66", cf.nb_cameras_ext, "U", "NF EN 62676"),
+        ]
+    if key == "asc_plan":
+        return [
+            ("1", f"Ascenseur {asc.capacite_kg}kg / {asc.vitesse_ms}m/s", asc.nb_ascenseurs, "U", "NF EN 81-20"),
+            ("2", "Gaine ascenseur béton", 1, "U", "NF EN 81-20"),
+        ]
+    if key == "gtb":
+        return [
+            ("1", f"Bus {aut.protocole}", 1, "U", "NF EN 50090"),
+            ("2", f"Points de contrôle GTB", aut.nb_points_controle, "U", "NF EN 15232"),
+            ("3", "Capteur température", 1, "U", "NF EN 15232"),
+            ("4", "Actionneur éclairage", 1, "U", "NF EN 15232"),
+        ]
+    return []
+
+
+def _draw_principe_plomberie(c, w, h, p, pl, page, total):
+    """Schéma de principe plomberie — colonnes montantes EF / EC / EU."""
+    _border(c, w, h)
+    c.setFillColor(NOIR); c.setFont("Helvetica-Bold", 12)
+    c.drawString(14*mm, h - 17*mm, "SCHÉMA DE PRINCIPE — PLOMBERIE / COLONNES MONTANTES")
+    nb_niv = max(2, p.get("nb_niveaux", 5))
+    # 3 colonnes (EF bleu, EC rouge, EU marron)
+    x_ef = 80*mm; x_ec = 150*mm; x_eu = 220*mm
+    y_base = 40*mm; y_top = y_base + nb_niv * 20*mm
+
+    # Rectangle colonnes
+    for x, col, label in [(x_ef, BLEU, "EF"), (x_ec, ROUGE, "EC"), (x_eu, MARRON, "EU")]:
+        c.setStrokeColor(col); c.setLineWidth(2)
+        c.line(x, y_base, x, y_top)
+        c.setFillColor(col); c.setFont("Helvetica-Bold", 9)
+        c.drawCentredString(x, y_top + 4*mm, label)
+
+    # Étages horizontaux + piquages
+    for i in range(nb_niv):
+        y = y_base + i * 20*mm
+        c.setStrokeColor(GRIS4); c.setLineWidth(0.3); c.setDash(2,2)
+        c.line(30*mm, y, 280*mm, y); c.setDash()
+        lvl_name = "Sous-Sol" if (i == 0 and p.get("avec_sous_sol")) else ("RDC" if i == (1 if p.get("avec_sous_sol") else 0) else f"Étage {i - (1 if p.get('avec_sous_sol') else 0)}")
+        if i == nb_niv - 1: lvl_name = "Terrasse"
+        c.setFillColor(GRIS2); c.setFont("Helvetica", 6)
+        c.drawString(30*mm, y+1*mm, lvl_name)
+        # Piquages EF/EC (robinets) et EU (chute)
+        for x, col in [(x_ef, BLEU), (x_ec, ROUGE)]:
+            c.setStrokeColor(col); c.setLineWidth(0.8)
+            c.line(x, y, x + 12*mm, y)
+            c.setFillColor(col); c.circle(x + 14*mm, y, 1.5, fill=1, stroke=0)
+        # EU raccordement
+        c.setStrokeColor(MARRON); c.setLineWidth(1); c.setDash(3,1.5)
+        c.line(x_eu - 12*mm, y, x_eu, y); c.setDash()
+
+    # Éléments en base
+    c.setFillColor(BLEU_B); c.setStrokeColor(BLEU); c.setLineWidth(0.8)
+    c.rect(x_ef - 18*mm, y_base - 18*mm, 30*mm, 14*mm, fill=1, stroke=1)
+    c.setFillColor(BLEU); c.setFont("Helvetica-Bold", 6)
+    c.drawCentredString(x_ef - 3*mm, y_base - 13*mm, f"Citerne {int(pl.volume_citerne_m3)}m³")
+    c.setFont("Helvetica", 5); c.drawCentredString(x_ef - 3*mm, y_base - 16*mm, f"Surpr. {pl.debit_surpresseur_m3h}m³/h")
+
+    c.setFillColor(colors.HexColor("#FFCDD2")); c.setStrokeColor(ROUGE); c.setLineWidth(0.8)
+    c.rect(x_ec - 10*mm, y_top + 8*mm, 22*mm, 10*mm, fill=1, stroke=1)
+    c.setFillColor(ROUGE); c.setFont("Helvetica-Bold", 6)
+    c.drawCentredString(x_ec + 1*mm, y_top + 13*mm, f"CESI ×{pl.nb_chauffe_eau_solaire}")
+
+    c.setFillColor(colors.HexColor("#D7CCC8")); c.setStrokeColor(MARRON); c.setLineWidth(0.8)
+    c.rect(x_eu - 10*mm, y_base - 18*mm, 24*mm, 14*mm, fill=1, stroke=1)
+    c.setFillColor(MARRON); c.setFont("Helvetica-Bold", 6)
+    c.drawCentredString(x_eu + 2*mm, y_base - 13*mm, "Réseau EU")
+    c.setFont("Helvetica", 5); c.drawCentredString(x_eu + 2*mm, y_base - 16*mm, "Fosse septique")
+
+    # Notes
+    c.setFillColor(NOIR); c.setFont("Helvetica-Bold", 7)
+    c.drawString(14*mm, 32*mm, "NOTES :")
+    c.setFont("Helvetica", 6); c.setFillColor(GRIS2)
+    c.drawString(14*mm, 28*mm, f"• EF : DN{pl.diam_colonne_montante_mm} PEHD, surpresseur automatique, pression 3 bar aux étages")
+    c.drawString(14*mm, 24*mm, f"• EC : DN32 cuivre / PER gaine, calorifugeage 13mm, CESI individuel par logement")
+    c.drawString(14*mm, 20*mm, f"• EU : DN100 PVC NF, pente 2% min., ventilation primaire en toiture")
+    c.drawString(14*mm, 16*mm, f"• Normes applicables : DTU 60.11 (installation), DTU 60.33 (évacuations), EDGE v3")
+
+    _cartouche_pro(c, w, h, p, "Schéma de principe — Plomberie", page, total, "PLB",
+                   drawing_no=f"TJN-MEP-PLB-PCP-{page:03d}")
+
+
+def _draw_principe_electricite(c, w, h, p, el, page, total):
+    """Schéma unifilaire TGBT simplifié."""
+    _border(c, w, h)
+    c.setFillColor(NOIR); c.setFont("Helvetica-Bold", 12)
+    c.drawString(14*mm, h - 17*mm, "SCHÉMA UNIFILAIRE SIMPLIFIÉ — TGBT")
+
+    # Source HT
+    sx = 50*mm; sy = h - 45*mm
+    c.setFillColor(colors.HexColor("#FFECB3")); c.setStrokeColor(NOIR); c.setLineWidth(1)
+    c.rect(sx, sy, 40*mm, 14*mm, fill=1, stroke=1)
+    c.setFillColor(NOIR); c.setFont("Helvetica-Bold", 7)
+    c.drawCentredString(sx+20*mm, sy+8*mm, "Arrivée HT 30kV")
+    c.setFont("Helvetica", 5); c.drawCentredString(sx+20*mm, sy+3*mm, "SENELEC / CIE")
+
+    # Transfo
+    tx0 = sx + 60*mm; ty0 = sy
+    c.setFillColor(colors.HexColor("#C8E6C9")); c.setStrokeColor(VERT); c.setLineWidth(1)
+    c.rect(tx0, ty0, 40*mm, 14*mm, fill=1, stroke=1)
+    c.setFillColor(VERT); c.setFont("Helvetica-Bold", 7)
+    c.drawCentredString(tx0+20*mm, ty0+8*mm, f"Transfo {el.transfo_kva}kVA")
+    c.setFont("Helvetica", 5); c.drawCentredString(tx0+20*mm, ty0+3*mm, "30kV / 400V 50Hz")
+
+    # Ligne vers TGBT
+    c.setStrokeColor(NOIR); c.setLineWidth(1.5)
+    c.line(sx+40*mm, sy+7*mm, tx0, ty0+7*mm)
+    c.line(tx0+40*mm, ty0+7*mm, tx0+60*mm, ty0+7*mm)
+
+    # Inverseur + GE
+    gex = tx0 + 60*mm
+    c.setFillColor(colors.HexColor("#FFE0B2")); c.setStrokeColor(ORANGE); c.setLineWidth(1)
+    c.rect(gex, ty0, 40*mm, 14*mm, fill=1, stroke=1)
+    c.setFillColor(ORANGE); c.setFont("Helvetica-Bold", 7)
+    c.drawCentredString(gex+20*mm, ty0+8*mm, "Inverseur Normal/Secours")
+    c.setFont("Helvetica", 5); c.drawCentredString(gex+20*mm, ty0+3*mm, f"GE {el.groupe_electrogene_kva}kVA")
+
+    # TGBT principal
+    tgx = 100*mm; tgy = sy - 50*mm
+    c.setFillColor(VERT_P); c.setStrokeColor(VERT); c.setLineWidth(1.2)
+    c.rect(tgx, tgy, 140*mm, 24*mm, fill=1, stroke=1)
+    c.setFillColor(VERT); c.setFont("Helvetica-Bold", 10)
+    c.drawCentredString(tgx+70*mm, tgy+15*mm, "TGBT PRINCIPAL")
+    c.setFont("Helvetica", 6); c.drawCentredString(tgx+70*mm, tgy+8*mm, f"4P+N — {el.nb_compteurs} départs — Col. {el.section_colonne_mm2}mm²")
+    c.drawCentredString(tgx+70*mm, tgy+4*mm, "Disjoncteur général + parafoudre classe I")
+
+    # Lien transfo -> TGBT
+    c.setStrokeColor(NOIR); c.setLineWidth(1.5)
+    c.line(tx0+20*mm, ty0, tx0+20*mm, tgy+24*mm)
+    c.line(tx0+20*mm, tgy+24*mm, tgx+70*mm, tgy+24*mm)
+
+    # Départs TGBT
+    departs = [
+        ("Éclairage", JAUNE, "1.5mm²", "16A"),
+        ("Prises",    ORANGE, "2.5mm²", "16A"),
+        ("Cuisine",   colors.HexColor("#E64A19"), "6mm²", "32A"),
+        ("Clim CVC",  CYAN, "4mm²", "20A"),
+        ("Ascenseur", BLEU, "16mm²", "63A"),
+        ("SSI",       ROUGE, "2.5mm²", "10A"),
+        ("Services",  VIOLET, "4mm²", "25A"),
+    ]
+    nb_dep = len(departs)
+    for i, (nm, col, sect, prot) in enumerate(departs):
+        dx = tgx + 5*mm + i * (130*mm/nb_dep)
+        # disjoncteur
+        c.setFillColor(BLANC); c.setStrokeColor(NOIR); c.setLineWidth(0.5)
+        c.rect(dx-3*mm, tgy-10*mm, 6*mm, 8*mm, fill=1, stroke=1)
+        c.setFillColor(NOIR); c.setFont("Helvetica-Bold", 5)
+        c.drawCentredString(dx, tgy-6*mm, prot)
+        # ligne vers charge
+        c.setStrokeColor(col); c.setLineWidth(1.2)
+        c.line(dx, tgy-10*mm, dx, tgy-25*mm)
+        # étiquette charge
+        c.saveState()
+        c.translate(dx, tgy-30*mm); c.rotate(-90)
+        c.setFillColor(NOIR); c.setFont("Helvetica-Bold", 6)
+        c.drawString(0, 0, nm)
+        c.setFillColor(GRIS2); c.setFont("Helvetica", 4.5)
+        c.drawString(0, -3.5*mm, sect)
+        c.restoreState()
+        # Lien TGBT -> disjoncteur
+        c.setStrokeColor(NOIR); c.setLineWidth(0.8)
+        c.line(dx, tgy, dx, tgy-2*mm)
+
+    # Notes
+    c.setFillColor(NOIR); c.setFont("Helvetica-Bold", 7)
+    c.drawString(14*mm, 30*mm, "NOTES :")
+    c.setFont("Helvetica", 6); c.setFillColor(GRIS2)
+    c.drawString(14*mm, 26*mm, f"• Régime de neutre TT — sélectivité différentielle 30mA/300mA — NF C 15-100")
+    c.drawString(14*mm, 22*mm, f"• Transformateur sec {el.transfo_kva}kVA en poste HT/BT, cellule SENELEC homologuée")
+    c.drawString(14*mm, 18*mm, f"• Groupe électrogène {el.groupe_electrogene_kva}kVA — démarrage automatique inverseur 3s")
+    c.drawString(14*mm, 14*mm, f"• Parafoudre type 1+2 classe I, mise à la terre < 10Ω — NF C 17-102")
+
+    _cartouche_pro(c, w, h, p, "Schéma unifilaire TGBT", page, total, "ELEC",
+                   drawing_no=f"TJN-MEP-ELE-UNI-{page:03d}")
+
+
+def _draw_principe_cvc(c, w, h, p, cv, page, total):
+    """Schéma de principe CVC — VMC + Climatisation."""
+    _border(c, w, h)
+    c.setFillColor(NOIR); c.setFont("Helvetica-Bold", 12)
+    c.drawString(14*mm, h - 17*mm, "SCHÉMA DE PRINCIPE — VMC & CLIMATISATION")
+
+    # VMC bloc (gauche)
+    vx = 30*mm; vy = h - 60*mm
+    c.setFillColor(colors.HexColor("#E8F5E9")); c.setStrokeColor(colors.HexColor("#2E7D32")); c.setLineWidth(1)
+    c.rect(vx, vy, 120*mm, 40*mm, fill=1, stroke=1)
+    c.setFillColor(colors.HexColor("#2E7D32")); c.setFont("Helvetica-Bold", 9)
+    c.drawCentredString(vx+60*mm, vy+33*mm, "VMC — VENTILATION MÉCANIQUE CONTRÔLÉE")
+    c.setFillColor(NOIR); c.setFont("Helvetica", 6)
+    c.drawCentredString(vx+60*mm, vy+27*mm, f"{cv.nb_vmc} × VMC {cv.type_vmc}")
+
+    # Caisson VMC
+    caisson_x = vx + 50*mm; caisson_y = vy + 5*mm
+    c.setFillColor(colors.HexColor("#A5D6A7")); c.setStrokeColor(colors.HexColor("#1B5E20")); c.setLineWidth(0.8)
+    c.rect(caisson_x, caisson_y, 20*mm, 12*mm, fill=1, stroke=1)
+    c.setFillColor(NOIR); c.setFont("Helvetica-Bold", 6)
+    c.drawCentredString(caisson_x+10*mm, caisson_y+6*mm, "Caisson")
+
+    # Bouches extraction (SDB, Cuisine)
+    for i, lbl in enumerate(["SDB/WC", "Cuisine", "Buanderie"]):
+        bx = vx + 10*mm + i*12*mm; by = vy + 18*mm
+        c.setStrokeColor(colors.HexColor("#1B5E20")); c.setFillColor(colors.HexColor("#C8E6C9"))
+        c.circle(bx, by, 2.5, fill=1, stroke=1)
+        c.setFillColor(NOIR); c.setFont("Helvetica", 4.5)
+        c.drawCentredString(bx, by-6, lbl)
+        # gaine vers caisson
+        c.setStrokeColor(colors.HexColor("#2E7D32")); c.setLineWidth(0.8)
+        c.line(bx, by, caisson_x, caisson_y + 6*mm)
+
+    # Toiture rejet
+    c.setFillColor(GRIS4); c.setStrokeColor(NOIR); c.setLineWidth(0.5)
+    c.rect(caisson_x+8*mm, vy+35*mm, 4*mm, 4*mm, fill=1, stroke=1)
+    c.setStrokeColor(colors.HexColor("#2E7D32")); c.setLineWidth(0.8)
+    c.line(caisson_x+10*mm, caisson_y+12*mm, caisson_x+10*mm, vy+35*mm)
+    c.setFillColor(NOIR); c.setFont("Helvetica", 4.5)
+    c.drawString(caisson_x+14*mm, vy+36*mm, "Rejet toiture")
+
+    # Entrées d'air
+    for i, lbl in enumerate(["Séjour", "Chambre 1", "Chambre 2"]):
+        ex = vx + 88*mm + i*8*mm; ey = vy + 18*mm
+        c.setFillColor(BLEU_B); c.setStrokeColor(BLEU); c.setLineWidth(0.5)
+        c.rect(ex-2, ey-1.5, 4, 3, fill=1, stroke=1)
+        c.setFillColor(NOIR); c.setFont("Helvetica", 4)
+        c.drawCentredString(ex, ey-6, lbl)
+
+    # Climatisation (droite)
+    cx0 = 170*mm; cy0 = h - 60*mm
+    c.setFillColor(colors.HexColor("#E0F7FA")); c.setStrokeColor(CYAN); c.setLineWidth(1)
+    c.rect(cx0, cy0, 110*mm, 40*mm, fill=1, stroke=1)
+    c.setFillColor(CYAN); c.setFont("Helvetica-Bold", 9)
+    c.drawCentredString(cx0+55*mm, cy0+33*mm, "CLIMATISATION — SPLITS INDIVIDUELS")
+    c.setFillColor(NOIR); c.setFont("Helvetica", 6)
+    c.drawCentredString(cx0+55*mm, cy0+27*mm,
+                        f"{cv.nb_splits_sejour + cv.nb_splits_chambre} splits — P.frigo {cv.puissance_frigorifique_kw:.0f}kW")
+
+    # GE extérieure (toiture)
+    gex0 = cx0 + 5*mm; gey0 = cy0 + 20*mm
+    c.setFillColor(colors.HexColor("#B2EBF2")); c.setStrokeColor(CYAN); c.setLineWidth(0.7)
+    c.rect(gex0, gey0, 18*mm, 8*mm, fill=1, stroke=1)
+    c.setFillColor(NOIR); c.setFont("Helvetica-Bold", 5)
+    c.drawCentredString(gex0+9*mm, gey0+4*mm, "GE ext.")
+    c.setFont("Helvetica", 4); c.drawCentredString(gex0+9*mm, gey0+1*mm, "multi-split")
+
+    # Unités intérieures
+    splits = [("Séjour", "18000 BTU"), ("Ch.1", "12000 BTU"), ("Ch.2", "12000 BTU"), ("Bureau", "9000 BTU")]
+    for i, (rm, btu) in enumerate(splits):
+        ux = cx0 + 28*mm + i * 20*mm; uy = cy0 + 5*mm
+        c.setFillColor(CYAN); c.setStrokeColor(colors.HexColor("#006064")); c.setLineWidth(0.4)
+        c.rect(ux-6, uy, 12, 4, fill=1, stroke=1)
+        c.setFillColor(NOIR); c.setFont("Helvetica", 4.5)
+        c.drawCentredString(ux, uy-3, rm); c.drawCentredString(ux, uy+6, btu)
+        # liaison frigorifique
+        c.setStrokeColor(CYAN); c.setLineWidth(0.7)
+        c.line(ux, uy+4, gex0 + 9*mm, gey0)
+
+    # Notes
+    c.setFillColor(NOIR); c.setFont("Helvetica-Bold", 7)
+    c.drawString(14*mm, 50*mm, "NOTES :")
+    c.setFont("Helvetica", 6); c.setFillColor(GRIS2)
+    c.drawString(14*mm, 46*mm, f"• VMC {cv.type_vmc} — extraction pièces humides, insufflation pièces sèches — DTU 68.3")
+    c.drawString(14*mm, 42*mm, f"• Débits : WC 15 m³/h, SDB 30 m³/h, cuisine 75-125 m³/h (pointe)")
+    c.drawString(14*mm, 38*mm, f"• Climatisation : R410A ou R32, COP > 3.5, niveau sonore < 40 dB(A) intérieur")
+    c.drawString(14*mm, 34*mm, f"• Liaisons frigorifiques cuivre isolé 13mm, longueur max 15m par split")
+    c.drawString(14*mm, 30*mm, f"• Condensats : évacuation gravitaire vers EU (pente 1%) ou pompe de relevage")
+    c.drawString(14*mm, 26*mm, f"• Contrôle GTB : thermostat programmable par zone — NF EN 15232")
+
+    _cartouche_pro(c, w, h, p, "Schéma de principe — CVC", page, total, "CVC",
+                   drawing_no=f"TJN-MEP-CVC-PCP-{page:03d}")
+
+
+def _draw_principe_ssi(c, w, h, p, si, page, total):
+    """Schéma de principe SSI — Détection + Extinction."""
+    _border(c, w, h)
+    c.setFillColor(NOIR); c.setFont("Helvetica-Bold", 12)
+    c.drawString(14*mm, h - 17*mm, "SCHÉMA DE PRINCIPE — SYSTÈME SÉCURITÉ INCENDIE (SSI)")
+
+    # Centrale SSI (haut centre)
+    ctx = 130*mm; cty = h - 55*mm
+    c.setFillColor(colors.HexColor("#FFEBEE")); c.setStrokeColor(ROUGE); c.setLineWidth(1.2)
+    c.rect(ctx, cty, 60*mm, 20*mm, fill=1, stroke=1)
+    c.setFillColor(ROUGE); c.setFont("Helvetica-Bold", 10)
+    c.drawCentredString(ctx+30*mm, cty+13*mm, "CENTRALE SSI")
+    c.setFillColor(NOIR); c.setFont("Helvetica", 6)
+    c.drawCentredString(ctx+30*mm, cty+7*mm, f"Cat. ERP {si.categorie_erp} — {si.centrale_zones} zones")
+    c.setFont("Helvetica", 5); c.drawCentredString(ctx+30*mm, cty+3*mm, "NF EN 54-2 + IT 246")
+
+    # 3 branches descendantes : Détection / Alarme / Extinction
+    br_y_top = cty; br_y_mid = cty - 30*mm
+    branches = [
+        ("DÉTECTION", 60*mm, [
+            ("DF ×"+str(si.nb_detecteurs_fumee), "Détecteur fumée optique"),
+            ("DM ×"+str(si.nb_declencheurs_manuels), "Déclencheur manuel"),
+            ("DT", "Détecteur thermovélocimétrique"),
+        ], ROUGE),
+        ("ALARME & ÉVACUATION", 160*mm, [
+            ("DS", "Diffuseur sonore type 2a"),
+            ("BAES", "Bloc autonome éclairage"),
+            ("MAD", "Mise en arrêt distribution"),
+        ], colors.HexColor("#D32F2F")),
+        ("EXTINCTION", 260*mm, [
+            ("RIA", f"{int(si.longueur_ria_ml//25)} × RIA DN33"),
+            ("EXT", f"{si.nb_extincteurs_poudre+si.nb_extincteurs_co2} extincteurs"),
+            ("SPR", "Sprinklers" if si.sprinklers_requis else "—"),
+        ], colors.HexColor("#E53935")),
+    ]
+    for name, x_br, items, col in branches:
+        # Ligne centrale -> tête branche
+        c.setStrokeColor(col); c.setLineWidth(1.2)
+        c.line(ctx+30*mm, br_y_top, x_br, br_y_mid + 22*mm)
+        c.line(x_br, br_y_mid + 22*mm, x_br, br_y_mid)
+        # Tête de branche
+        c.setFillColor(col); c.rect(x_br-20*mm, br_y_mid-4*mm, 40*mm, 8*mm, fill=1, stroke=0)
+        c.setFillColor(BLANC); c.setFont("Helvetica-Bold", 7)
+        c.drawCentredString(x_br, br_y_mid-1*mm, name)
+        # Items
+        for i, (code, desig) in enumerate(items):
+            iy = br_y_mid - 12*mm - i*10*mm
+            c.setFillColor(BLANC); c.setStrokeColor(col); c.setLineWidth(0.8)
+            c.rect(x_br-18*mm, iy-3*mm, 16*mm, 7*mm, fill=1, stroke=1)
+            c.setFillColor(col); c.setFont("Helvetica-Bold", 5.5)
+            c.drawCentredString(x_br-10*mm, iy, code)
+            c.setFillColor(NOIR); c.setFont("Helvetica", 5)
+            c.drawString(x_br-1*mm, iy-1*mm, desig)
+            # ligne vers item
+            c.setStrokeColor(col); c.setLineWidth(0.6); c.setDash(2,1)
+            c.line(x_br, br_y_mid-4*mm, x_br, iy+4*mm); c.setDash()
+
+    # Notes
+    c.setFillColor(NOIR); c.setFont("Helvetica-Bold", 7)
+    c.drawString(14*mm, 32*mm, "NOTES :")
+    c.setFont("Helvetica", 6); c.setFillColor(GRIS2)
+    c.drawString(14*mm, 28*mm, f"• Catégorie d'ERP : {si.categorie_erp} — règlement de sécurité IT 246")
+    c.drawString(14*mm, 24*mm, f"• Détection automatique par DF optique NF EN 54-7, DM NF EN 54-11")
+    c.drawString(14*mm, 20*mm, f"• Alarme générale type IAA — diffuseurs sonores 65 dB(A) à 3m min.")
+    c.drawString(14*mm, 16*mm, f"• BAES NF C 71-800 — autonomie 1h minimum, maintenance annuelle obligatoire")
+    c.drawString(14*mm, 12*mm, f"• RIA DN33 / 25m NF EN 671-1 — pression dynamique > 2 bar, débit > 35 L/min")
+
+    _cartouche_pro(c, w, h, p, "Schéma de principe — SSI", page, total, "SSI",
+                   drawing_no=f"TJN-MEP-SSI-PCP-{page:03d}")
+
+
+# ══════════════════════════════════════════
 # PLANS MEP — même grille, équipements depuis ResultatsMEP
 # ══════════════════════════════════════════
 
@@ -2172,21 +3081,46 @@ def generer_plans_mep(output_path, resultats_mep=None, resultats_structure=None,
         pot_s = resultats_structure.poteaux[0].section_mm
 
     import re as _re
+    def _norm_name(raw: str) -> str:
+        """Normalize a room label: lowercase, strip punctuation/apostrophes/accents,
+        collapse spaces. 'S. D''EAU 2' -> 'sdeau 2', 'Tol.' -> 'tol', 'S.D.B' -> 'sdb'."""
+        import unicodedata
+        s = unicodedata.normalize('NFKD', raw or '').encode('ascii','ignore').decode('ascii').lower()
+        s = _re.sub(r"[\.'`\-_/,;:]+", "", s)
+        s = _re.sub(r"\s+", " ", s).strip()
+        return s
+
     def _classify_rooms(rooms):
+        """Classify rooms after normalising labels so that 'S.D.B', 'S. D''EAU',
+        'Tol.', 'W.C.' are all captured as wet, and every sensible room gets
+        a bucket (no silent drops)."""
         wet, living, service = [], [], []
+        WET_KW  = ('sdb','sdeau','seau','wc','toil','douche','bain','water','lavabo','sanit','salle de bain','salle deau')
+        KIT_KW  = ('cuisine','kitch','office','pantry','buanderie','lingerie')
+        LIV_KW  = ('salon','chambre','sejour','bureau','sam','bar','gym','sport','restaurant','magasin','polyvalente','jeu','dressing','suite','parent','living')
+        SRV_KW  = ('hall','palier','asc','ascenseur','dgt','degagement','sas','terrasse','balcon','jardin','piscine','vide','porche','circulation','guerite','accueil','technique','local','gaine','escalier','rangement','depot','archive','reserve','cave','garage','parking','service')
         for r in rooms:
-            n = r.get('name', '').lower().strip()
-            if _re.match(r'^\d', n): continue
-            if any(k in n for k in ['sdb','wc','toil','douche']):
-                wet.append({**r, 'rt': 'wet'})
-            elif any(k in n for k in ['cuisine','kitch','buanderie']):
-                wet.append({**r, 'rt': 'kitchen'})
-            elif any(k in n for k in ['salon','chambre','sejour','bureau','sam','bar','gym','restaurant','magasin','salle']):
-                living.append({**r, 'rt': 'living'})
-            elif any(k in n for k in ['hall','palier','asc','dgt','sas','terrasse','balcon','jardin','piscine','vide','porche','circulation']):
-                service.append({**r, 'rt': 'service'})
+            raw = r.get('name', '')
+            n = _norm_name(raw)
+            if not n or _re.match(r'^\d', n):
+                continue
+            rt = None
+            if any(k in n for k in WET_KW):
+                rt = 'wet'
+            elif any(k in n for k in KIT_KW):
+                rt = 'kitchen'
+            elif any(k in n for k in SRV_KW):
+                rt = 'service'
+            elif any(k in n for k in LIV_KW):
+                rt = 'living'
             else:
-                living.append({**r, 'rt': 'other'})
+                # Heuristic fallback based on area: small unlabeled rooms are
+                # more likely service/wet than living. Default 'other' -> living.
+                rt = 'other'
+            entry = {**r, 'rt': rt, 'name_norm': n}
+            if rt in ('wet','kitchen'): wet.append(entry)
+            elif rt == 'service':       service.append(entry)
+            else:                       living.append(entry)
         return wet, living, service
 
     # Build level list from project params
@@ -2225,7 +3159,8 @@ def generer_plans_mep(output_path, resultats_mep=None, resultats_structure=None,
         ("AUTOMATISATION — GTB",            "GTB",  "gtb"),
     ]
 
-    total_pages = len(sublots) * len(level_list)
+    # +4 principe pages (PLB, ELEC, CVC, SSI)
+    total_pages = len(sublots) * len(level_list) + 4
     page = 0
 
     c = pdfcanvas.Canvas(output_path, pagesize=A3L)
@@ -2238,8 +3173,9 @@ def generer_plans_mep(output_path, resultats_mep=None, resultats_structure=None,
         w, h = A3L; c.setPageSize(A3L); _border(c, w, h)
         c.setFillColor(NOIR); c.setFont("Helvetica-Bold", 12)
         c.drawString(14*mm, h - 17*mm, f"{title} — {level_label}")
-        # Use enhanced cartouche
-        _cartouche_pro(c, w, h, p, f"Plan {title}", page, total_pages, lot_label)
+        # Use enhanced cartouche with normalized drawing number
+        _cartouche_pro(c, w, h, p, f"Plan {title}", page, total_pages, lot_label,
+                       drawing_no=_mep_drawing_no(key, level_label, page))
 
         # ── Fond de plan : 3 modes (PDF background, DWG redraw, parametric grid) ──
         has_geom_mep = level_geom and len(level_geom.get('walls', [])) >= 5
@@ -2259,7 +3195,15 @@ def generer_plans_mep(output_path, resultats_mep=None, resultats_structure=None,
 
         # MODE 1: PDF background (primary for PDF uploads)
         if archi_pdf_path and (is_from_pdf_mep or not has_geom_mep):
-            pdf_page_idx = min(level_idx_mep, 4)
+            # If geometry was extracted from a specific PDF page, use THAT page
+            # as background for all levels — otherwise coordinates don't match.
+            cv_page = None
+            if isinstance(level_geom, dict):
+                cv_page = level_geom.get('_cv_meta', {}).get('page_idx')
+            if cv_page is not None:
+                pdf_page_idx = cv_page
+            else:
+                pdf_page_idx = min(level_idx_mep, 4)
             ok_mep, placement_mep = _render_pdf_background(
                 c, archi_pdf_path, pdf_page_idx, w, h, opacity=0.85, dpi=200, grayscale=True
             )
@@ -2273,6 +3217,19 @@ def generer_plans_mep(output_path, resultats_mep=None, resultats_structure=None,
                 gw = abs(tx(bounds[2]) - tx(bounds[0]))
                 gh = abs(ty(bounds[3]) - ty(bounds[1]))
                 use_dwg = True  # use_dwg means "we have room-aware geometry"
+            elif ok_mep and placement_mep:
+                # PDF rendered but no rooms extracted — anchor equipment to the
+                # PDF drawing area so symbols sit INSIDE the actual plan, not
+                # on an independent parametric grid floating above it.
+                ox = placement_mep['ox']
+                oy = placement_mep['oy']
+                gw = placement_mep['draw_w']
+                gh = placement_mep['draw_h']
+                # Subtle structural overlay (axes + columns) aligned to PDF bounds
+                c.saveState(); c.setStrokeAlpha(0.35); c.setFillAlpha(0.45)
+                _overlay_axes_columns_in_bounds(c, ox, oy, gw, gh, nx, ny, pot_s)
+                c.restoreState()
+                use_dwg = True  # triggers bay-within-bounds logic below
             else:
                 ox, oy, gw, gh = ox_g, oy_g, gw_g, gh_g
                 c.saveState(); c.setStrokeAlpha(0.4); c.setFillAlpha(0.5)
@@ -2306,12 +3263,22 @@ def generer_plans_mep(output_path, resultats_mep=None, resultats_structure=None,
         # ── Dessin MEP : logique room-aware ──
         # Classify rooms for this specific level
         if use_dwg:
-            lvl_wet, lvl_living, lvl_service = _classify_rooms(level_geom.get('rooms', []))
+            _lg = level_geom or {}
+            lvl_wet, lvl_living, lvl_service = _classify_rooms(_lg.get('rooms', []))
             lvl_all = lvl_wet + lvl_living + lvl_service
-            lvl_shafts = [(r['x'], r['y']) for r in lvl_service if 'asc' in r.get('name', '').lower()]
+            def _nm(r):
+                return r.get('name_norm') or _norm_name(r.get('name',''))
+            lvl_shafts = [(r['x'], r['y']) for r in lvl_service if 'asc' in _nm(r)]
             if not lvl_shafts:
-                lvl_shafts = [(r['x'], r['y']) for r in lvl_service if 'palier' in r.get('name', '').lower()]
-            lvl_halls = [r for r in lvl_service if any(k in r.get('name', '').lower() for k in ['hall','palier','dgt'])]
+                lvl_shafts = [(r['x'], r['y']) for r in lvl_service if 'palier' in _nm(r) or 'escalier' in _nm(r)]
+            # Fallback: pick centermost service-ish room so the ascenseur symbol
+            # always has a coherent anchor even on terrace / slabs without explicit labels
+            if not lvl_shafts and lvl_service:
+                b = _dwg_bounds(level_geom) or (0,0,0,0)
+                cx = (b[0]+b[2])/2; cy = (b[1]+b[3])/2
+                nearest = min(lvl_service, key=lambda r: (r['x']-cx)**2+(r['y']-cy)**2)
+                lvl_shafts = [(nearest['x'], nearest['y'])]
+            lvl_halls = [r for r in lvl_service if any(k in _nm(r) for k in ['hall','palier','dgt','sas','circulation','accueil'])]
 
         # ── Gaine technique unique (GT) : point de passage vertical ──
         # Positionnée à côté de la première gaine ascenseur
@@ -2332,7 +3299,38 @@ def generer_plans_mep(output_path, resultats_mep=None, resultats_structure=None,
             """Placeholder — routing lines removed for clarity."""
             pass
 
-        if use_dwg and lvl_all:
+        # ── WALL-AWARE SHORT-CIRCUIT ──
+        # When geometry came from CV extraction on an uploaded PDF, bypass
+        # the per-lot hand-coded drawing blocks (which place symbols at
+        # room centroids with decorative offsets) and use the wall-aware
+        # placer which:
+        #  - filters rooms to those inside the building envelope
+        #  - snaps equipment against the real walls of each room
+        #  - routes per lot-type semantics (points d'eau in wet rooms, etc.)
+        _wall_aware_done = False
+        if use_dwg and level_geom and level_geom.get('_cv_meta'):
+            try:
+                import wall_aware_placer as _wap
+                _prepared = _wap.prepare(level_geom)
+                _u = _prepared.get('unit_scale', 1.0) or 1.0
+                _items = _wap.place_equipment_with_scale(
+                    key, _prepared['rooms'], _prepared['walls'], u=_u
+                )
+                if _items:
+                    _wap.draw_items(c, _items, tx, ty, symbol_size=5.5)
+                _wall_aware_done = True
+                notes = [f"Placement wall-aware : {len(_items)} équipements "
+                         f"dans {len(_prepared['rooms'])} pièces (envelope filtrée)"]
+            except Exception as _e_wap:
+                import logging as _lg_mod
+                _lg_mod.getLogger('tijan').warning(
+                    f"wall-aware placer failed: {_e_wap} — fallback to legacy"
+                )
+                _wall_aware_done = False
+
+        if _wall_aware_done:
+            pass  # drawn via wall_aware_placer above; skip legacy per-lot block
+        elif use_dwg and lvl_all:
             # MODE DWG : utilise les positions réelles des pièces
             shafts = lvl_shafts
             wet_r = lvl_wet
@@ -2360,32 +3358,40 @@ def generer_plans_mep(output_path, resultats_mep=None, resultats_structure=None,
                 for wr in wet_r:
                     wx, wy = tx(wr['x']), ty(wr['y'])
                     _route_to_gt(c, wx, wy, gtx_p, gty_p, BLEU)
-                    n = wr.get('name','').lower()
+                    n = wr.get('name_norm') or _norm_name(wr.get('name',''))
                     circuit_ref = f"EF{circuit_idx}"
-                    if 'sdb' in n or 'douche' in n:
+                    if any(k in n for k in ('sdb','sdeau','seau','douche','bain','lavabo','sanit')):
                         c.setFillColor(BLANC); c.setStrokeColor(BLEU); c.setLineWidth(0.8)
                         c.circle(wx, wy, 5, fill=1, stroke=1)
                         c.setFillColor(BLEU); c.setFont("Helvetica-Bold", 4)
                         c.drawCentredString(wx, wy-1.5, "SDB")
                         c.setFont("Helvetica", 2.5); c.drawString(wx+8, wy-3, circuit_ref)
-                    elif 'wc' in n or 'toil' in n:
+                    elif any(k in n for k in ('wc','toil','water')):
                         c.setFillColor(BLEU); c.circle(wx, wy, 4, fill=1, stroke=0)
                         c.setFillColor(BLANC); c.setFont("Helvetica-Bold", 3.5)
                         c.drawCentredString(wx, wy-1.5, "WC")
                         c.setFillColor(NOIR); c.setFont("Helvetica", 2.5)
                         c.drawString(wx+7, wy-2.5, circuit_ref)
-                    elif 'cuisine' in n or 'kitch' in n:
+                    elif 'cuisine' in n or 'kitch' in n or 'office' in n or 'pantry' in n:
                         c.setFillColor(BLEU); c.rect(wx-6, wy-3.5, 12, 7, fill=1, stroke=0)
                         c.setFillColor(BLANC); c.setFont("Helvetica-Bold", 4)
                         c.drawCentredString(wx, wy-1.5, "CUI")
                         c.setFillColor(NOIR); c.setFont("Helvetica", 2.5)
                         c.drawString(wx+8, wy-5, circuit_ref)
-                    elif 'buanderie' in n:
+                    elif 'buanderie' in n or 'lingerie' in n:
                         c.setFillColor(CYAN); c.rect(wx-5, wy-3.5, 10, 7, fill=1, stroke=0)
                         c.setFillColor(BLANC); c.setFont("Helvetica-Bold", 3.5)
                         c.drawCentredString(wx, wy-1.5, "BUA")
                         c.setFillColor(NOIR); c.setFont("Helvetica", 2.5)
                         c.drawString(wx+7, wy-5, circuit_ref)
+                    else:
+                        # Fallback — any wet/kitchen room not matched above still gets an EF tap
+                        c.setFillColor(BLANC); c.setStrokeColor(BLEU); c.setLineWidth(0.6)
+                        c.circle(wx, wy, 3, fill=1, stroke=1)
+                        c.setFillColor(BLEU); c.setFont("Helvetica-Bold", 3)
+                        c.drawCentredString(wx, wy-1, "EF")
+                        c.setFillColor(NOIR); c.setFont("Helvetica", 2.5)
+                        c.drawString(wx+6, wy-2, circuit_ref)
                     circuit_idx += 1
                 notes = [f"Colonne montante EF DN{pl.diam_colonne_montante_mm}",
                          f"Citerne {int(pl.volume_citerne_m3)}m³ — Surpresseur {pl.debit_surpresseur_m3h}m³/h",
@@ -2403,14 +3409,17 @@ def generer_plans_mep(output_path, resultats_mep=None, resultats_structure=None,
                 c.drawString(gtx_p+8, gty_p-1, f"CE {pl.nb_chauffe_eau_solaire}×CESI")
                 circuit_idx = 1
                 for wr in wet_r:
-                    n = wr.get('name','').lower()
-                    if any(k in n for k in ['sdb','douche','cuisine','kitch','buanderie']):
+                    n = wr.get('name_norm') or _norm_name(wr.get('name',''))
+                    # WC-only rooms don't get EC, but every SDB / salle d'eau / cuisine / buanderie does
+                    if any(k in n for k in ('sdb','sdeau','seau','douche','bain','cuisine','kitch','office','pantry','buanderie','lingerie','lavabo','sanit')):
                         wx, wy = tx(wr['x']), ty(wr['y'])
                         _route_to_gt(c, wx, wy, gtx_p, gty_p, ROUGE, 0.5, (3,1.5))
                         c.setFillColor(BLANC); c.setStrokeColor(ROUGE); c.setLineWidth(0.5)
-                        c.circle(wx, wy, 2.5, fill=1, stroke=1)
+                        c.circle(wx, wy, 3, fill=1, stroke=1)
+                        c.setFillColor(ROUGE); c.setFont("Helvetica-Bold", 2.8)
+                        c.drawCentredString(wx, wy-1, "EC")
                         c.setFillColor(NOIR); c.setFont("Helvetica", 2.5)
-                        c.drawString(wx+6, wy-1, f"EC{circuit_idx}")
+                        c.drawString(wx+6, wy-3, f"EC{circuit_idx}")
                         circuit_idx += 1
                 notes = ["CM EC DN32", f"{pl.nb_chauffe_eau_solaire} CESI"]
                 _legend_pro(c, w, h, [(ROUGE, 'fill', "GT — Chauffe-eau"),
@@ -2425,8 +3434,8 @@ def generer_plans_mep(output_path, resultats_mep=None, resultats_structure=None,
                 c.drawString(gtx_p+7, gty_p-2, f"EP DN75")
                 circuit_idx = 1
                 for wr in wet_r:
-                    n = wr.get('name','').lower()
-                    if any(k in n for k in ['sdb','wc','toil','douche','cuisine','kitch','buanderie']):
+                    n = wr.get('name_norm') or _norm_name(wr.get('name',''))
+                    if any(k in n for k in ('sdb','sdeau','seau','wc','toil','water','douche','bain','cuisine','kitch','office','pantry','buanderie','lingerie','lavabo','sanit')):
                         wx, wy = tx(wr['x']), ty(wr['y'])
                         _route_to_gt(c, wx, wy, gtx_p, gty_p, MARRON, 0.5, (4,2))
                         c.setFillColor(MARRON); c.circle(wx, wy, 2, fill=1, stroke=0)
@@ -2482,24 +3491,68 @@ def generer_plans_mep(output_path, resultats_mep=None, resultats_structure=None,
                     for hh in sh:
                         hx, hy = tx(hh['x']), ty(hh['y'])
                         c.line(prev_x, prev_y, hx, hy); prev_x, prev_y = hx, hy
-                # Prises dans chaque pièce avec références circuits
+                # ── Placement individuel des prises, plaquées aux murs ──
+                # Stratégie: pour chaque pièce, on utilise le bbox (si dispo) ou on
+                # fabrique un bbox depuis aire_m² pour répartir les prises le long
+                # des 4 murs. Puis on les dessine individuellement à leur position
+                # réelle (plus de cluster autour du centroïde).
+                import math as _m
                 circuit_idx = 1
+                def _room_bbox(r):
+                    b = r.get('bbox_mm') or r.get('bbox')
+                    if b and len(b) >= 4:
+                        return b[0], b[1], b[2], b[3]
+                    # Fallback: carré équivalent centré sur (x,y)
+                    area = max(6.0, r.get('area_m2', 12.0))
+                    side = _m.sqrt(area) * 1000.0  # mm
+                    return (r['x'] - side/2, r['y'] - side/2, side, side)
+                def _place_along_perimeter(r, n_prises):
+                    bx, by, bw, bh = _room_bbox(r)
+                    if bw <= 0 or bh <= 0:
+                        return []
+                    # Inset 300 mm (≈ épaisseur mur + retrait réglementaire)
+                    inset = min(bw, bh) * 0.08
+                    inset = max(inset, 200.0)
+                    x0, y0 = bx + inset, by + inset
+                    x1, y1 = bx + bw - inset, by + bh - inset
+                    # Distribue n_prises autour du périmètre, en évitant les coins
+                    perim_pts = []
+                    # Mur bas, haut, gauche, droite : chacune reçoit n/4 prises
+                    n_each = max(1, n_prises // 4)
+                    for i in range(n_each):
+                        t = (i + 1) / (n_each + 1)
+                        perim_pts.append((x0 + t*(x1-x0), y0))          # bas
+                        perim_pts.append((x0 + t*(x1-x0), y1))          # haut
+                        perim_pts.append((x0, y0 + t*(y1-y0)))          # gauche
+                        perim_pts.append((x1, y0 + t*(y1-y0)))          # droite
+                    return perim_pts[:n_prises]
                 for r in all_r:
-                    n = r.get('name','').lower()
-                    if any(k in n for k in ['terrasse','balcon','jardin','piscine','vide','espace']): continue
-                    rx, ry = tx(r['x']), ty(r['y'])
-                    c.setFillColor(ORANGE); c.setStrokeColor(NOIR); c.setLineWidth(0.15)
+                    n = r.get('name_norm') or _norm_name(r.get('name',''))
+                    if not n or any(k in n for k in ('terrasse','balcon','jardin','piscine','vide','espace','porche','gaine','technique')):
+                        continue
                     circuit_ref = f"D{circuit_idx}"
-                    if any(k in n for k in ['chambre','salon','sejour','bureau','sam','bar','restaurant']):
-                        for dx, dy in [(-6,-3),(6,-3),(-6,3),(6,3)]:
-                            c.rect(rx+dx-2, ry+dy-1.2, 4, 2.4, fill=1, stroke=1)
-                    elif any(k in n for k in ['cuisine','kitch']):
-                        for dx, dy in [(-6,-3),(6,-3),(-6,3),(6,3),(0,-5),(0,5)]:
-                            c.rect(rx+dx-2, ry+dy-1.2, 4, 2.4, fill=1, stroke=1)
+                    # Nombre de prises selon type pièce (EN NF C15-100)
+                    if any(k in n for k in ('cuisine','kitch','office','pantry')):
+                        n_prises = 6
+                    elif any(k in n for k in ('salon','sejour','sam','restaurant','polyvalente','sport','gym')):
+                        n_prises = 5
+                    elif 'chambre' in n or 'suite' in n:
+                        n_prises = 3
+                    elif any(k in n for k in ('bureau','sdb','sdeau','seau','bain')):
+                        n_prises = 2
+                    elif any(k in n for k in ('hall','palier','sas','dgt','degagement','circulation','accueil')):
+                        n_prises = 1
                     else:
-                        c.rect(rx+4, ry-0.8, 2.4, 1.6, fill=1, stroke=1)
-                    c.setFillColor(NOIR); c.setFont("Helvetica", 2.5)
-                    c.drawString(rx+10, ry+2, circuit_ref)
+                        n_prises = 2
+                    positions = _place_along_perimeter(r, n_prises)
+                    for (px, py) in positions:
+                        pxp, pyp = tx(px), ty(py)
+                        c.setFillColor(ORANGE); c.setStrokeColor(NOIR); c.setLineWidth(0.15)
+                        c.rect(pxp-1.8, pyp-1.1, 3.6, 2.2, fill=1, stroke=1)
+                    # Label circuit au centre de la pièce (un seul par pièce, pas par prise)
+                    rx, ry = tx(r['x']), ty(r['y'])
+                    c.setFillColor(NOIR); c.setFont("Helvetica", 2.2)
+                    c.drawString(rx, ry, circuit_ref)
                     circuit_idx += 1
                 notes = [f"Transfo {el.transfo_kva}kVA", f"GE {el.groupe_electrogene_kva}kVA",
                          f"{el.nb_compteurs} compteurs — Col.{el.section_colonne_mm2}mm²"]
@@ -2510,26 +3563,28 @@ def generer_plans_mep(output_path, resultats_mep=None, resultats_structure=None,
                                       (colors.HexColor("#E64A19"), 'fill', "Prise cuisinière/Chauffe-eau")], "LÉGENDE PRISES & DISTRIBUTION")
 
             elif key == "cvc_clim":
+                # Climatise EVERY habitable room (living classification).
+                # Only explicitly non-habitable zones are skipped (outdoor or service-only).
+                _SKIP_CLIM = ('terrasse','balcon','jardin','piscine','vide','porche','guerite','gaine','escalier','technique')
                 circuit_idx = 1
                 for r in living_r:
-                    n = r.get('name','').lower()
-                    if any(k in n for k in ['chambre','salon','sejour','bureau','sam','bar','gym','restaurant','salle','magasin']):
-                        rx, ry = tx(r['x']), ty(r['y'])
-                        c.setFillColor(CYAN); c.setStrokeColor(colors.HexColor("#006064")); c.setLineWidth(0.35)
-                        c.rect(rx-6, ry+7, 12, 4, fill=1, stroke=1)
-                        c.setFillColor(colors.HexColor("#006064")); c.setFont("Helvetica", 2.2)
+                    n = r.get('name_norm') or _norm_name(r.get('name',''))
+                    if not n or any(k in n for k in _SKIP_CLIM):
+                        continue
+                    rx, ry = tx(r['x']), ty(r['y'])
+                    c.setFillColor(CYAN); c.setStrokeColor(colors.HexColor("#006064")); c.setLineWidth(0.35)
+                    c.rect(rx-6, ry+7, 12, 4, fill=1, stroke=1)
+                    c.setFillColor(colors.HexColor("#006064")); c.setFont("Helvetica", 2.2)
+                    if any(k in n for k in ('salon','sejour','sam','restaurant','polyvalente','sport','gym')):
                         btu_val = "18000"
-                        if 'salon' in n or 'sejour' in n or 'sam' in n or 'restaurant' in n:
-                            c.drawCentredString(rx, ry+11.5, "18000 BTU")
-                        elif 'chambre' in n:
-                            c.drawCentredString(rx, ry+11.5, "12000 BTU")
-                            btu_val = "12000"
-                        else:
-                            c.drawCentredString(rx, ry+11.5, "9000 BTU")
-                            btu_val = "9000"
-                        c.setFillColor(NOIR); c.setFont("Helvetica", 2.5)
-                        c.drawString(rx+8, ry+7, f"C{circuit_idx}")
-                        circuit_idx += 1
+                    elif 'chambre' in n or 'suite' in n or 'parent' in n:
+                        btu_val = "12000"
+                    else:
+                        btu_val = "9000"
+                    c.drawCentredString(rx, ry+11.5, f"{btu_val} BTU")
+                    c.setFillColor(NOIR); c.setFont("Helvetica", 2.5)
+                    c.drawString(rx+8, ry+7, f"C{circuit_idx}")
+                    circuit_idx += 1
                 notes = [f"P frigo: {cv.puissance_frigorifique_kw:.0f}kW",
                          f"Splits séj: {cv.nb_splits_sejour} — ch: {cv.nb_splits_chambre}"]
                 _legend_pro(c, w, h, [(CYAN, 'fill', "Split mural 18000 BTU"),
@@ -2595,9 +3650,20 @@ def generer_plans_mep(output_path, resultats_mep=None, resultats_structure=None,
                                       (ROUGE, 0.5, "Liaison détection")], "LÉGENDE SÉCURITÉ INCENDIE")
 
             elif key == "ssi_ext":
-                stairs = [r for r in lvl_service if 'palier' in r.get('name','').lower()]
+                # RIA / BAES near every vertical circulation (palier, escalier, hall)
+                ria_anchors = [r for r in lvl_service if any(k in (r.get('name_norm') or _norm_name(r.get('name',''))) for k in ('palier','escalier','hall','sas'))]
+                # Fallback — for a terrace or a level with no named circulation
+                # anchor RIAs to corners of the plan so extinction is never absent
+                if not ria_anchors:
+                    b = _dwg_bounds(level_geom)
+                    if b:
+                        xmid = (b[0]+b[2])/2; ymid = (b[1]+b[3])/2
+                        ria_anchors = [
+                            {'x': b[0] + (b[2]-b[0])*0.15, 'y': b[1] + (b[3]-b[1])*0.15, 'name': 'coin'},
+                            {'x': b[0] + (b[2]-b[0])*0.85, 'y': b[1] + (b[3]-b[1])*0.85, 'name': 'coin'},
+                        ]
                 ria_idx = 1
-                for r in stairs:
+                for r in ria_anchors:
                     rx, ry = tx(r['x']), ty(r['y'])
                     c.setFillColor(BLANC); c.setStrokeColor(ROUGE); c.setLineWidth(0.7)
                     c.circle(rx+10, ry+5, 5, fill=1, stroke=1)
@@ -2612,6 +3678,20 @@ def generer_plans_mep(output_path, resultats_mep=None, resultats_structure=None,
                     c.drawCentredString(rx+8, ry-8.5, "BAES")
                     c.setFillColor(NOIR); c.setFont("Helvetica", 2)
                     c.drawString(rx+2, ry-12, f"BD{ria_idx-1}")
+                # Extincteurs poudre — 1 par pièce principale, placés près de la porte (approximé au centroid décalé)
+                ext_idx = 1
+                for r in (lvl_living + lvl_halls):
+                    n = r.get('name_norm') or _norm_name(r.get('name',''))
+                    if any(k in n for k in ('terrasse','balcon','jardin','piscine','vide')) and not ria_anchors:
+                        # Sur la terrasse (quand c'est le seul élément), accepter quelques extincteurs
+                        pass
+                    rx, ry = tx(r['x']), ty(r['y'])
+                    c.setFillColor(colors.HexColor("#E53935")); c.setStrokeColor(NOIR); c.setLineWidth(0.2)
+                    c.rect(rx-2, ry+3, 3, 4, fill=1, stroke=1)
+                    c.setFillColor(NOIR); c.setFont("Helvetica", 1.8)
+                    c.drawString(rx+2, ry+5, f"E{ext_idx}")
+                    ext_idx += 1
+                    if ext_idx > 30: break
                 notes = [f"{si.nb_extincteurs_co2+si.nb_extincteurs_poudre} ext. — RIA {si.longueur_ria_ml:.0f}ml",
                          f"Sprinklers: {'OUI' if si.sprinklers_requis else 'NON'}"]
                 _legend_pro(c, w, h, [(ROUGE, 'circle', "RIA - Robinet d'incendie armé"),
@@ -2651,18 +3731,30 @@ def generer_plans_mep(output_path, resultats_mep=None, resultats_structure=None,
 
             elif key == "asc_plan":
                 asc_idx = 1
-                for r in lvl_service:
-                    if 'asc' in r.get('name','').lower():
-                        rx, ry = tx(r['x']), ty(r['y'])
-                        c.setFillColor(BLEU_B); c.setStrokeColor(BLEU); c.setLineWidth(1)
-                        c.rect(rx-10, ry-10, 20, 20, fill=1, stroke=1)
-                        c.setStrokeColor(BLEU); c.setLineWidth(0.3)
-                        c.line(rx-10, ry-10, rx+10, ry+10); c.line(rx-10, ry+10, rx+10, ry-10)
-                        c.setFillColor(BLEU); c.setFont("Helvetica-Bold", 3)
-                        c.drawCentredString(rx, ry-12, f"{asc.nb_ascenseurs}× {asc.capacite_kg}kg")
-                        c.setFillColor(NOIR); c.setFont("Helvetica", 2.5)
-                        c.drawString(rx+12, ry-10, f"A{asc_idx}")
-                        asc_idx += 1
+                # Priority 1: rooms with 'asc' in their name
+                asc_rooms = [r for r in lvl_service if 'asc' in (r.get('name_norm') or _norm_name(r.get('name','')))]
+                # Priority 2: paliers / escaliers (reasonable location for shafts)
+                if not asc_rooms:
+                    asc_rooms = [r for r in lvl_service if any(k in (r.get('name_norm') or _norm_name(r.get('name',''))) for k in ('palier','escalier'))]
+                # Priority 3: lvl_shafts fallback (which already covers the center of the plan)
+                if not asc_rooms and lvl_shafts:
+                    asc_rooms = [{'x': sx, 'y': sy, 'name': 'gaine'} for (sx, sy) in lvl_shafts]
+                # Priority 4: last resort — pick the plan center so nb_ascenseurs count is not lost
+                if not asc_rooms:
+                    b = _dwg_bounds(level_geom) or (0,0,0,0)
+                    asc_rooms = [{'x': (b[0]+b[2])/2, 'y': (b[1]+b[3])/2, 'name': 'centre'}]
+                # Cap to actual nb_ascenseurs
+                for r in asc_rooms[:max(1, asc.nb_ascenseurs)]:
+                    rx, ry = tx(r['x']), ty(r['y'])
+                    c.setFillColor(BLEU_B); c.setStrokeColor(BLEU); c.setLineWidth(1)
+                    c.rect(rx-10, ry-10, 20, 20, fill=1, stroke=1)
+                    c.setStrokeColor(BLEU); c.setLineWidth(0.3)
+                    c.line(rx-10, ry-10, rx+10, ry+10); c.line(rx-10, ry+10, rx+10, ry-10)
+                    c.setFillColor(BLEU); c.setFont("Helvetica-Bold", 3)
+                    c.drawCentredString(rx, ry-12, f"{asc.capacite_kg}kg")
+                    c.setFillColor(NOIR); c.setFont("Helvetica", 2.5)
+                    c.drawString(rx+12, ry-10, f"A{asc_idx}")
+                    asc_idx += 1
                 notes = [f"{asc.nb_ascenseurs} asc. {asc.capacite_kg}kg — {asc.vitesse_ms}m/s"]
                 _legend_pro(c, w, h, [(BLEU_B, 'fill', f"Gaine ascenseur {asc.capacite_kg}kg"),
                                       (colors.HexColor("#0277BD"), 'fill', "Cage escalier"),
@@ -2860,8 +3952,32 @@ def generer_plans_mep(output_path, resultats_mep=None, resultats_structure=None,
         for k_n, note in enumerate(notes[:3]):
             c.drawString(14*mm, 42*mm - k_n*5*mm, note)
 
-        _cartouche_pro(c, w, h, p, f"Plan {title}", page, total_pages, lot_label)
+        # Nomenclature équipements (milieu-bas gauche)
+        try:
+            nomencl = _build_mep_nomenclature(key, pl, el, cv, cf, si, asc, aut)
+            if nomencl:
+                _draw_mep_nomenclature_table(c, 14*mm, 60*mm, nomencl,
+                                             title=f"NOMENCLATURE — {title[:30]}")
+        except Exception as _e_nom:
+            pass
+
+        _cartouche_pro(c, w, h, p, f"Plan {title}", page, total_pages, lot_label,
+                       drawing_no=_mep_drawing_no(key, level_label, page))
         c.showPage()
+
+    # ── 4 schémas de principe en fin de document ──
+    try:
+        page += 1
+        _draw_principe_plomberie(c, A3L[0], A3L[1], p, pl, page, total_pages); c.showPage()
+        page += 1
+        _draw_principe_electricite(c, A3L[0], A3L[1], p, el, page, total_pages); c.showPage()
+        page += 1
+        _draw_principe_cvc(c, A3L[0], A3L[1], p, cv, page, total_pages); c.showPage()
+        page += 1
+        _draw_principe_ssi(c, A3L[0], A3L[1], p, si, page, total_pages); c.showPage()
+    except Exception as _e_pcp:
+        import logging
+        logging.getLogger("tijan").warning(f"Schémas de principe skipped: {_e_pcp}")
 
     c.save()
     return output_path

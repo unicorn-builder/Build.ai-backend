@@ -659,6 +659,7 @@ def _fuse_geometry(cv_lines: dict, cv_rooms: list, cv_doors: list,
         for i, room in enumerate(cv_rooms):
             cx, cy = room['centroid_x'], room['centroid_y']
             area_m2 = (room['area_px'] * mm_per_px * mm_per_px) / 1e6
+            bx, by, bw, bh = room['bbox']
             # Auto-label based on area
             if area_m2 < 4:
                 name = f"SDB/WC"
@@ -671,7 +672,13 @@ def _fuse_geometry(cv_lines: dict, cv_rooms: list, cv_doors: list,
             geometry['rooms'].append({
                 'name': name,
                 'x': px_to_mm_x(cx),
-                'y': px_to_mm_y(cy)
+                'y': px_to_mm_y(cy),
+                'area_m2': round(area_m2, 1),
+                'bbox_mm': [
+                    px_to_mm_x(bx), px_to_mm_y(by),
+                    round(bw * mm_per_px, 1), round(bh * mm_per_px, 1),
+                ],
+                'aspect': round(max(bw, bh) / max(min(bw, bh), 1), 2),
             })
 
     # --- Infer axes from walls if none detected ---
