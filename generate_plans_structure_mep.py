@@ -816,16 +816,7 @@ def _draw_coffrage_annotations(c, tx, ty, axes_x, axes_y, pot_s, pp_b, pp_h,
         c.drawCentredString(0, 0, f"{span_m:.2f}m")
         c.restoreState()
 
-    # ── Compact spec box (bottom-left, outside the plan) ──
-    box_x = x_lo - 5*mm
-    box_y = y_lo - 28*mm
-    c.setFillColor(colors.HexColor("#F5F5F5")); c.setStrokeColor(GRIS3); c.setLineWidth(0.3)
-    c.rect(box_x, box_y, 60*mm, 14*mm, fill=1, stroke=1)
-    c.setFillColor(NOIR); c.setFont("Helvetica-Bold", 5)
-    c.drawString(box_x + 2*mm, box_y + 10*mm, f"Poteaux {pot_s}  |  PP {pp_b}×{pp_h}  |  PS {ps_b}×{ps_h}")
-    c.setFont("Helvetica", 4.5)
-    c.drawString(box_x + 2*mm, box_y + 5*mm, f"Dalle ep.{dalle_ep}  |  {beton}  |  {acier}")
-    c.drawString(box_x + 2*mm, box_y + 1*mm, f"Portées: {px_m:.2f} × {py_m:.2f}m")
+    # Spec box removed — duplicated info already present in NOTES TECHNIQUES + Column schedule.
 
 
 def _draw_mep_annotations(c, tx, ty, axes_x, axes_y, rooms, key, sublot_data,
@@ -1089,8 +1080,12 @@ def _legend(c, w, h, items):
 
 
 def _legend_pro(c, w, h, items, title="LÉGENDE"):
-    """Enhanced legend with bordered box and rich symbol support.
-    Width is computed from the longest label so no text overflows the frame."""
+    """No-op — legend box removed at user request (alignment issues with the
+    page border). Info is available in the element labels on the plan itself
+    and in the cartouche. All existing callers are preserved for when/if we
+    re-enable a cleaner legend in the future."""
+    return
+
     # Compute label width with stringWidth, then add room for symbol + padding
     from reportlab.pdfbase.pdfmetrics import stringWidth
     LABEL_FONT = "Helvetica"; LABEL_SIZE = 6.5
