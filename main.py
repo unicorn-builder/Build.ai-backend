@@ -66,6 +66,31 @@ app.add_middleware(
 )
 
 
+# ── Surface FastAPI request-validation errors (422) in logs ──
+# Default 422s give zero info in Render — this prints the actual offending
+# field + value so we can diagnose multipart/form bugs from logs alone.
+from fastapi.exceptions import RequestValidationError as _RVErr
+from starlette.requests import Request as _StRequest
+
+@app.exception_handler(_RVErr)
+async def _log_validation_error(request: _StRequest, exc: _RVErr):
+    try:
+        errs = exc.errors()
+    except Exception:
+        errs = [{"msg": str(exc)}]
+    # Compact summary per error: loc + type + msg
+    summary = []
+    for e in errs[:8]:
+        loc = ".".join(str(p) for p in (e.get("loc") or []))
+        summary.append(f"{loc}: {e.get('type','?')} — {e.get('msg','?')}")
+    logger.warning("422 on %s %s — %d error(s): %s",
+                   request.method, request.url.path, len(errs), " | ".join(summary))
+    # Echo a structured response so the frontend can show the real reason
+    return JSONResponse(status_code=422,
+                        content={"ok": False, "error": "validation",
+                                 "path": request.url.path, "errors": errs})
+
+
 # ════════════════════════════════════════════════════════════
 # IMPORTS LAZY
 # ════════════════════════════════════════════════════════════
@@ -534,12 +559,25 @@ _parse_jobs_lock = threading.Lock()
 
 @app.post("/parse-multi")
 async def parse_multi_start(
+    request: Request,
     files: List[UploadFile] = File(...),
-    nb_niveaux: Optional[int] = Form(None),
+    nb_niveaux: Optional[str] = Form(None),   # accept str then coerce
     ville: Optional[str] = Form(None),
     beton: Optional[str] = Form(None),
-    levels: Optional[List[str]] = Form(None),
+    # NOTE: read levels manually from form below — declaring it here as
+    # List[str] caused intermittent 422s when the field is empty/missing.
 ):
+    # Coerce nb_niveaux defensively (frontend may send '', 'null', 'NaN', '8')
+    try:
+        nb_niveaux = int(nb_niveaux) if nb_niveaux not in (None, '', 'null', 'NaN', 'undefined') else None
+    except (TypeError, ValueError):
+        nb_niveaux = None
+    # Pull `levels` manually so we tolerate any number (including zero) of values
+    try:
+        _form = await request.form()
+        levels = [str(v) for v in _form.getlist('levels')] if _form else None
+    except Exception:
+        levels = None
     """
     Parse N DWG/DXF files — one per building level.
     Optional `levels` form field: array of level labels parallel to files
