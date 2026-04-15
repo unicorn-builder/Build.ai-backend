@@ -511,18 +511,27 @@ async def parse_multi_start(
     nb_niveaux: Optional[int] = Form(None),
     ville: Optional[str] = Form(None),
     beton: Optional[str] = Form(None),
+    levels: Optional[List[str]] = Form(None),
 ):
     """
     Parse N DWG/DXF files — one per building level.
+    Optional `levels` form field: array of level labels parallel to files
+    (e.g. ["SOUS_SOL", "RDC", "ETAGE_1", "TERRASSE"]). When provided, overrides
+    filename heuristics. When omitted, level is inferred from filename.
     With ODA: converts all to DXF locally (~2s each) → ezdxf geometry → returns immediately.
     Without ODA: falls back to async APS processing.
     """
     from dwg_converter import converter_status, convert_to_dxf
 
     saved = []
-    for f in files:
-        saved.append((f.filename, await save_upload(f)))
-    logger.info(f"/parse-multi: {len(saved)} files, converter: {converter_status()['strategy']}")
+    for idx, f in enumerate(files):
+        label = None
+        if levels and idx < len(levels):
+            lv = (levels[idx] or "").strip()
+            if lv:
+                label = lv
+        saved.append((f.filename, await save_upload(f), label))
+    logger.info(f"/parse-multi: {len(saved)} files, labels={[s[2] for s in saved]}, converter: {converter_status()['strategy']}")
 
     status = converter_status()
 
@@ -556,10 +565,18 @@ async def _parse_multi_fast(saved_files, nb_niveaux, ville, beton):
     main_result = None
     dxf_temps = []
 
-    # Sort by size desc — biggest first for main params
-    sorted_files = sorted(saved_files, key=lambda x: os.path.getsize(x[1]), reverse=True)
+    # Normalize to 3-tuples (filename, filepath, explicit_label_or_none)
+    normalized = []
+    for item in saved_files:
+        if len(item) == 3:
+            normalized.append(item)
+        else:
+            normalized.append((item[0], item[1], None))
 
-    for i, (filename, filepath) in enumerate(sorted_files):
+    # Sort by size desc — biggest first for main params
+    sorted_files = sorted(normalized, key=lambda x: os.path.getsize(x[1]), reverse=True)
+
+    for i, (filename, filepath, explicit_label) in enumerate(sorted_files):
         dxf_path = None
         try:
             # Convert to DXF
@@ -577,7 +594,7 @@ async def _parse_multi_fast(saved_files, nb_niveaux, ville, beton):
                 main_result = extraire_params(dxf_path)
 
             if dxf_geom:
-                level_key = _classify_level_from_name(filename, i)
+                level_key = explicit_label or _classify_level_from_name(filename, i)
                 dxf_geom['label'] = filename.rsplit('.', 1)[0]
                 dwg_geometry[level_key] = dxf_geom
                 walls = len(dxf_geom.get('walls', []))
@@ -670,11 +687,19 @@ def _parse_multi_worker(job_id, saved_files, nb_niveaux, ville, beton):
     try:
         from aps_parser_v2 import parser_dwg_aps
 
+        # Normalize to 3-tuples: (filename, filepath, explicit_label_or_none)
+        normalized = []
+        for item in saved_files:
+            if len(item) == 3:
+                normalized.append(item)
+            else:
+                normalized.append((item[0], item[1], None))
+
         # Sort by size descending — largest file first (most geometry)
-        sorted_files = sorted(saved_files, key=lambda x: os.path.getsize(x[1]), reverse=True)
+        sorted_files = sorted(normalized, key=lambda x: os.path.getsize(x[1]), reverse=True)
 
         # Parse main file first (largest) for params
-        main_name, main_path = sorted_files[0]
+        main_name, main_path, main_label = sorted_files[0]
         logger.info(f"  Job {job_id}: parsing main file {main_name}")
         main_result = parser_dwg_aps(main_path, nb_niveaux=nb_niveaux or len(saved_files),
                                       ville=ville)
@@ -701,12 +726,12 @@ def _parse_multi_worker(job_id, saved_files, nb_niveaux, ville, beton):
         # Parse remaining files for their geometry
         dwg_geometry = {}
         if main_geom:
-            # Classify main file
-            level_key = _classify_level_from_name(main_name, len(dwg_geometry))
+            # Classify main file (use explicit label if provided)
+            level_key = main_label or _classify_level_from_name(main_name, len(dwg_geometry))
             main_geom['label'] = main_name.replace('.dwg', '').replace('.DWG', '')
             dwg_geometry[level_key] = main_geom
 
-        for i, (filename, filepath) in enumerate(sorted_files[1:], start=2):
+        for i, (filename, filepath, explicit_label) in enumerate(sorted_files[1:], start=2):
             try:
                 logger.info(f"  Job {job_id}: parsing {filename} ({i}/{len(sorted_files)})")
                 level_result = parser_dwg_aps(filepath, nb_niveaux=nb_niv, ville=ville)
@@ -715,7 +740,7 @@ def _parse_multi_worker(job_id, saved_files, nb_niveaux, ville, beton):
                 if level_result.get("ok") and level_result.get("urn"):
                     geom = _load_project_geometry(level_result["urn"])
                     if geom:
-                        level_key = _classify_level_from_name(filename, len(dwg_geometry))
+                        level_key = explicit_label or _classify_level_from_name(filename, len(dwg_geometry))
                         geom['label'] = filename.replace('.dwg', '').replace('.DWG', '')
                         dwg_geometry[level_key] = geom
                         logger.info(f"    {level_key}: {len(geom.get('walls', []))} walls")
@@ -738,10 +763,12 @@ def _parse_multi_worker(job_id, saved_files, nb_niveaux, ville, beton):
         logger.error(f"  Job {job_id} error: {e}")
         _update_job(job_id, status="error", error=str(e))
     finally:
-        # Cleanup temp files
-        for _, p in saved_files:
-            try: os.unlink(p)
-            except OSError: pass
+        # Cleanup temp files (accept both 2-tuple and 3-tuple shapes)
+        for item in saved_files:
+            p = item[1] if len(item) >= 2 else None
+            if p:
+                try: os.unlink(p)
+                except OSError: pass
 
 
 def _count_levels_from_geometry(dwg_geometry: dict) -> int:
