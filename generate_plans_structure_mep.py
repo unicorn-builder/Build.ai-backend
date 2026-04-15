@@ -1080,13 +1080,9 @@ def _legend(c, w, h, items):
 
 
 def _legend_pro(c, w, h, items, title="LÉGENDE"):
-    """No-op — legend box removed at user request (alignment issues with the
-    page border). Info is available in the element labels on the plan itself
-    and in the cartouche. All existing callers are preserved for when/if we
-    re-enable a cleaner legend in the future."""
-    return
-
-    # Compute label width with stringWidth, then add room for symbol + padding
+    """Legend — symbols + labels without a bordered frame.
+    Keeps the content readable at top-right without the rectangle that kept
+    clipping against the page border."""
     from reportlab.pdfbase.pdfmetrics import stringWidth
     LABEL_FONT = "Helvetica"; LABEL_SIZE = 6.5
     TITLE_FONT = "Helvetica-Bold"; TITLE_SIZE = 8
@@ -1096,17 +1092,15 @@ def _legend_pro(c, w, h, items, title="LÉGENDE"):
         return it[2]
     max_label_w = max((stringWidth(_lbl(it), LABEL_FONT, LABEL_SIZE) for it in items), default=0)
     title_w = stringWidth(title, TITLE_FONT, TITLE_SIZE)
-    # Box width: 3mm left pad + 14pt symbol zone + 3pt gap + label + 4mm right pad
-    box_w_pt = 3*mm + 14 + 3 + max(max_label_w, title_w) + 4*mm
-    box_w_pt = max(box_w_pt, 68*mm)   # keep a minimum so small lists still read well
-    box_w_pt = min(box_w_pt, 118*mm)  # avoid overflowing the page
-    lx = w - box_w_pt - 10*mm; ly = h - 25*mm
-    leg_h = min(len(items) * LINE_STEP + 18, 200*mm)
-    c.setFillColor(BLANC); c.setStrokeColor(NOIR); c.setLineWidth(0.5)
-    c.rect(lx, ly - leg_h, box_w_pt, leg_h, fill=1, stroke=1)
+    # Content width (no box): symbol (14pt) + gap (3pt) + label + small right breath
+    content_w = 14 + 3 + max(max_label_w, title_w) + 2*mm
+    # Anchor the content block with its right edge 14mm inside the page border
+    lx = w - content_w - 14*mm
+    ly = h - 25*mm
 
+    # Title — no background rectangle, just text
     c.setFont(TITLE_FONT, TITLE_SIZE); c.setFillColor(VERT)
-    c.drawString(lx + 3*mm, ly - 8*mm, title)
+    c.drawString(lx, ly - 8*mm, title)
     ly_item = ly - 14*mm
 
     for item in items:
@@ -1119,8 +1113,8 @@ def _legend_pro(c, w, h, items, title="LÉGENDE"):
             color, width, label = item
             symbol_type = 'circle' if width == 'circle' else ('fill' if width == 'fill' else 'line')
 
-        # Draw symbol
-        sx = lx + 3*mm
+        # Draw symbol (no box — anchor at lx directly)
+        sx = lx
         if symbol_type == 'fill':
             c.setFillColor(color); c.setStrokeColor(NOIR); c.setLineWidth(0.3)
             c.rect(sx, ly_item, 4, 4, fill=1, stroke=1)
