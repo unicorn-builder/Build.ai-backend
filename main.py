@@ -2180,6 +2180,29 @@ def _resolve_geometry(params) -> dict:
         if urn_geom:
             return urn_geom
 
+    # Priority 4: re-extract from persisted archi PDF (makes projects opened
+    # from /dashboard work even when dwg_geometry wasn't persisted to Supabase
+    # or was cleared, as long as the archi PDF was uploaded to storage).
+    url = getattr(params, 'archi_pdf_url', None) or (params.get('archi_pdf_url') if isinstance(params, dict) else None)
+    ref = getattr(params, 'archi_pdf_ref', None) or (params.get('archi_pdf_ref') if isinstance(params, dict) else None)
+    if url or ref:
+        pdf_path = _resolve_archi_pdf(params)
+        if pdf_path and os.path.isfile(pdf_path):
+            try:
+                from cv_geometry_extractor import extract_geometry_per_page_cv
+                pages_geom = extract_geometry_per_page_cv(pdf_path, use_vision=True) or {}
+                if pages_geom:
+                    # Keep only the pages that actually carried geometry
+                    clean = {k: v for k, v in pages_geom.items()
+                             if isinstance(v, dict) and len(v.get('walls', [])) >= 3}
+                    if clean:
+                        total = sum(len(v.get('walls', [])) for v in clean.values())
+                        logger.info(f"[persistence] re-extracted geometry from archi PDF: "
+                                    f"{len(clean)} levels, {total} walls")
+                        return clean
+            except Exception as e:
+                logger.warning(f"[persistence] archi PDF re-extraction failed: {e}")
+
     return None
 
 
