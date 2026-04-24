@@ -77,7 +77,7 @@ def generer_boq_structure_xlsx(rs, params: dict, lang: str = "fr") -> bytes:
 
     prix_beton = {
         'C25/30': px.beton_c2530_m3, 'C30/37': px.beton_c3037_m3,
-        'C35/45': px.beton_c3545_m3, 'C40/50': px.beton_c3545_m3,
+        'C35/45': px.beton_c3545_m3, 'C40/50': getattr(px, 'beton_c4050_m3', px.beton_c3545_m3),
     }.get(rs.classe_beton, px.beton_c3037_m3)
     prix_acier = px.acier_ha400_kg if rs.classe_acier == 'HA400' else px.acier_ha500_kg
 
@@ -180,33 +180,81 @@ def generer_boq_structure_xlsx(rs, params: dict, lang: str = "fr") -> bytes:
     # LOT 4 — Structure BA / Reinforced Concrete Structure
     ep_dalle_m = dalle.epaisseur_mm / 1000
     c_struct = 0
-    columns_label = _t('Poteaux', 'Columns', lang)
+
+    # 4.1 — Poteaux béton + acier (per level — descente de charges)
     for i, pt in enumerate(poteaux):
         b = pt.section_mm / 1000
         V_niv = b**2 * d.hauteur_etage_m * nb_pot
+        # Steel mass: bar area (cm²) → m² (/10000) × length × density × count
         As_niv = pt.nb_barres * math.pi * pt.diametre_mm**2 / 400 * nb_pot * d.hauteur_etage_m * 7850 / 10000
         c_b = int(V_niv * prix_beton)
         c_a = int(As_niv * prix_acier)
-        cols_desc = _t(f'Poteaux {pt.section_mm}×{pt.section_mm} — {pt.niveau}', f'Columns {pt.section_mm}×{pt.section_mm} — {pt.niveau}', lang)
-        _add_row(ws, row, (f'4.1.{i+1}', cols_desc, f'{V_niv:.1f}', 'm³', prix_beton, c_b, f'{pt.nb_barres}HA{pt.diametre_mm}'))
+        cols_desc = _t(f'Poteaux béton {pt.section_mm}×{pt.section_mm} — {pt.niveau}',
+                       f'Column concrete {pt.section_mm}×{pt.section_mm} — {pt.niveau}', lang)
+        _add_row(ws, row, (f'4.1.{i*2+1}', cols_desc, f'{V_niv:.1f}', 'm³', prix_beton, c_b, ''))
+        row += 1
+        steel_desc = _t(f'Armatures poteaux {pt.niveau} — {pt.nb_barres}HA{pt.diametre_mm}',
+                        f'Column reinforcement {pt.niveau} — {pt.nb_barres}HA{pt.diametre_mm}', lang)
+        _add_row(ws, row, (f'4.1.{i*2+2}', steel_desc, f'{As_niv:.0f}', 'kg', prix_acier, c_a, f'{nb_pot} {_t("poteaux", "columns", lang)}'))
         row += 1
         c_struct += c_b + c_a
 
-    # Poutres / Beams
-    V_pp = poutre.b_mm/1000 * poutre.h_mm/1000 * d.portee_max_m * (d.nb_travees_y+1) * d.nb_travees_x * d.nb_niveaux
-    c_pp = int(V_pp * prix_beton)
-    beams_desc = _t(f'Poutres principales {poutre.b_mm}×{poutre.h_mm}', f'Main beams {poutre.b_mm}×{poutre.h_mm}', lang)
-    _add_row(ws, row, ('4.2', beams_desc, f'{V_pp:.1f}', 'm³', prix_beton, c_pp, ''))
+    # 4.2 — Poutres principales + secondaires (correct X/Y separation)
+    pp_b = poutre.b_mm / 1000
+    pp_h = poutre.h_mm / 1000
+    px_m = getattr(d, 'portee_x_m', d.portee_max_m)
+    py_m = getattr(d, 'portee_y_m', d.portee_max_m)
+    # Poutres en X: (nb_travees_y + 1) rows × nb_travees_x spans × portee_x
+    V_pp_x = pp_b * pp_h * px_m * (d.nb_travees_y + 1) * d.nb_travees_x * d.nb_niveaux
+    # Poutres en Y: (nb_travees_x + 1) rows × nb_travees_y spans × portee_y
+    V_pp_y = pp_b * pp_h * py_m * (d.nb_travees_x + 1) * d.nb_travees_y * d.nb_niveaux
+    V_pp = V_pp_x + V_pp_y
+    # Steel for beams: use As_inf + As_sup from calculation
+    As_pp_cm2 = (poutre.As_inf_cm2 + poutre.As_sup_cm2) if hasattr(poutre, 'As_inf_cm2') else 10.0
+    # Total beam length
+    L_pp_total = (px_m * (d.nb_travees_y + 1) * d.nb_travees_x + py_m * (d.nb_travees_x + 1) * d.nb_travees_y) * d.nb_niveaux
+    As_pp_kg = As_pp_cm2 / 10000 * L_pp_total * 7850
+    c_pp_b = int(V_pp * prix_beton)
+    c_pp_a = int(As_pp_kg * prix_acier)
+    beams_desc = _t(f'Poutres principales béton {poutre.b_mm}×{poutre.h_mm}',
+                    f'Main beams concrete {poutre.b_mm}×{poutre.h_mm}', lang)
+    _add_row(ws, row, ('4.2.1', beams_desc, f'{V_pp:.1f}', 'm³', prix_beton, c_pp_b, ''))
     row += 1
-    c_struct += c_pp
+    beams_steel = _t(f'Armatures poutres', f'Beam reinforcement', lang)
+    _add_row(ws, row, ('4.2.2', beams_steel, f'{As_pp_kg:.0f}', 'kg', prix_acier, c_pp_a, f'As={As_pp_cm2:.1f}cm²'))
+    row += 1
+    c_struct += c_pp_b + c_pp_a
 
-    # Dalle / Slab
+    # 4.3 — Dalle / Slab
     V_dalle = ep_dalle_m * surf_batie
     c_dalle = int(V_dalle * prix_beton)
+    # Slab steel: As_x + As_y per m² × surface × density
+    As_dalle_cm2 = (dalle.As_x_cm2_ml + dalle.As_y_cm2_ml) if hasattr(dalle, 'As_x_cm2_ml') else 8.0
+    As_dalle_kg = As_dalle_cm2 / 10000 * surf_batie * 7850
+    c_dalle_a = int(As_dalle_kg * prix_acier)
     slab_desc = _t(f'Dalle pleine ep.{dalle.epaisseur_mm}mm', f'Solid slab t={dalle.epaisseur_mm}mm', lang)
-    _add_row(ws, row, ('4.3', slab_desc, f'{V_dalle:.1f}', 'm³', prix_beton, c_dalle, ''))
+    _add_row(ws, row, ('4.3.1', slab_desc, f'{V_dalle:.1f}', 'm³', prix_beton, c_dalle, ''))
     row += 1
-    c_struct += c_dalle
+    slab_steel = _t('Armatures dalle (nappe inf. + sup.)', 'Slab reinforcement (top + bottom)', lang)
+    _add_row(ws, row, ('4.3.2', slab_steel, f'{As_dalle_kg:.0f}', 'kg', prix_acier, c_dalle_a, f'As={As_dalle_cm2:.1f}cm²/ml'))
+    row += 1
+    c_struct += c_dalle + c_dalle_a
+
+    # 4.4 — Coffrage / Formwork
+    # Columns: perimeter × height × count × nb_niveaux
+    coff_pot = 4 * (poteaux[0].section_mm / 1000) * d.hauteur_etage_m * nb_pot * d.nb_niveaux
+    # Beams: (2 × h + b) × total beam length
+    coff_pp = (2 * pp_h + pp_b) * L_pp_total
+    # Slab: underside = surf_batie × nb_niveaux
+    coff_dalle = surf_batie * d.nb_niveaux
+    coff_total = coff_pot + coff_pp + coff_dalle
+    c_coff = int(coff_total * px.coffrage_bois_m2)
+    coff_desc = _t('Coffrage bois (poteaux + poutres + dalle)', 'Formwork (columns + beams + slab)', lang)
+    _add_row(ws, row, ('4.4', coff_desc, f'{coff_total:.0f}', 'm²', px.coffrage_bois_m2, c_coff,
+                       _t(f'Pot:{coff_pot:.0f} + Poutr:{coff_pp:.0f} + Dalle:{coff_dalle:.0f}',
+                          f'Col:{coff_pot:.0f} + Beam:{coff_pp:.0f} + Slab:{coff_dalle:.0f}', lang)))
+    row += 1
+    c_struct += c_coff
 
     _add_row(ws, row, ('', _t('SOUS-TOTAL LOT 4', 'SUBTOTAL LOT 4', lang), '', '', '', c_struct, ''), subtotal=True)
     grand_total += c_struct
