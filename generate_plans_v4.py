@@ -27,7 +27,10 @@ GRIS5 = colors.HexColor("#E8E8E8")
 BLANC = colors.white
 VERT = colors.HexColor("#43A956")
 VERT_P = colors.HexColor("#E8F5E9")
-ROUGE = colors.HexColor("#CC3333")
+ROUGE = colors.HexColor("#C62828")      # Lit inférieur — rouge foncé (pas criard)
+ROUGE_CLAIR = colors.HexColor("#E57373") # Ancrage / crochets
+VERT_FERR = colors.HexColor("#2E7D32")  # Lit supérieur — vert foncé
+VIOLET_FERR = colors.HexColor("#7B1FA2") # 2e lit / renforts
 BLEU_B = colors.HexColor("#D6E4F0")
 
 A3L = landscape(A3)
@@ -102,8 +105,9 @@ def section_ba(c, cx, cy, bw, bh, nb, dia, target_h=35*mm):
     for i in range(nb_top):
         t = i / max(nb_top - 1, 1)
         positions.append((ix + iw * t, iy + ih))
-    c.setFillColor(NOIR)
-    for px, py in positions[:nb]:
+    # Bottom bars in red, top bars in green (matches elevation convention)
+    for idx, (px, py) in enumerate(positions[:nb]):
+        c.setFillColor(ROUGE if idx < nb_bot else VERT_FERR)
         c.circle(px, py, br, fill=1, stroke=0)
     c.setFillColor(GRIS2); c.setFont("Helvetica", 6)
     c.drawCentredString(cx, cy - H/2 - 7, f"{bw}")
@@ -127,20 +131,25 @@ def elevation_poutre(c, x, y, avail_w, portee_mm, h_mm, nb_inf, nb_sup,
     c.setFillColor(colors.Color(0.96, 0.96, 0.96))
     c.setStrokeColor(NOIR); c.setLineWidth(0.5)
     c.rect(x, y, L, H, fill=1, stroke=1)
-    c.setStrokeColor(ROUGE); c.setLineWidth(0.7)
+    # Lit inférieur (rouge) — barres de travée
+    c.setStrokeColor(ROUGE); c.setLineWidth(0.5)
     for i in range(nb_inf):
         by = y + enr + i * max((enr * 0.6), 1)
         c.line(x + 2, by, x + L - 2, by)
+    # Lit supérieur (vert) — chapeaux sur appuis
+    c.setStrokeColor(VERT_FERR); c.setLineWidth(0.5)
     for i in range(nb_sup):
         ty = y + H - enr - i * max((enr * 0.6), 1)
         c.line(x + 2, ty, x + L - 2, ty)
+    # Étriers (gris fin)
     nb_etr = max(int(portee_mm / etr_esp), 3)
     c.setStrokeColor(GRIS3); c.setLineWidth(0.25)
     for i in range(nb_etr + 1):
         ex = x + enr + i * (L - 2*enr) / nb_etr
         c.line(ex, y + enr - 1, ex, y + H - enr + 1)
+    # Crochets d'ancrage (rouge clair, discret)
     hk = min(5*sc, 4)
-    c.setStrokeColor(ROUGE); c.setLineWidth(0.5)
+    c.setStrokeColor(ROUGE_CLAIR); c.setLineWidth(0.4)
     c.line(x + 2, y + enr, x + 2 - hk, y + enr + hk)
     c.line(x + 2, y + H - enr, x + 2 - hk, y + H - enr - hk)
     c.line(x + L - 2, y + enr, x + L - 2 + hk, y + enr + hk)
