@@ -580,6 +580,8 @@ async def parse_fichier(
             # DWG → try convert to DXF (local or APS), then ezdxf
             from dwg_converter import convert_to_dxf
             dxf_path = convert_to_dxf(tmp_path, ville=ville or "Dakar")
+            dwg_geom_found = False
+
             if dxf_path and os.path.isfile(dxf_path):
                 # Got a real DXF — extract everything via ezdxf
                 from parse_plans import extraire_params
@@ -588,14 +590,79 @@ async def parse_fichier(
                     dxf_geom = _extract_dxf_geometry(dxf_path)
                     if dxf_geom:
                         result["dwg_geometry"] = dxf_geom
+                        dwg_geom_found = True
                         logger.info("DWG→DXF→geometry: %d walls, %d rooms",
                                     len(dxf_geom.get('walls',[])), len(dxf_geom.get('rooms',[])))
+                    else:
+                        logger.warning("DWG→DXF succeeded but geometry extraction returned None (no walls found in named layers)")
                 except Exception as e:
                     logger.warning("DXF geometry extraction failed: %s", e)
             else:
-                # DXF conversion failed — parse params via APS (no geometry)
-                from aps_parser_v2 import parser_dwg_aps
-                result = parser_dwg_aps(tmp_path, nb_niveaux=nb_niveaux, ville=ville or "Dakar")
+                logger.warning("DWG→DXF conversion failed entirely — no local converter produced output")
+                # Parse params via APS (no geometry)
+                try:
+                    from aps_parser_v2 import parser_dwg_aps
+                    result = parser_dwg_aps(tmp_path, nb_niveaux=nb_niveaux, ville=ville or "Dakar")
+                except Exception as e:
+                    logger.warning("APS parser also failed: %s", e)
+                    from parse_plans import extraire_params
+                    result = extraire_params(tmp_path)
+
+            # FALLBACK: if DWG produced no geometry, try rasterizing DXF to images → CV pipeline
+            if not dwg_geom_found and dxf_path and os.path.isfile(dxf_path):
+                logger.info("[DWG fallback] No geometry from ezdxf — trying DXF→PDF→CV pipeline")
+                try:
+                    # Convert DXF to PDF for CV extraction
+                    import ezdxf
+                    from ezdxf.addons.drawing import matplotlib as ezdxf_mpl
+                    import matplotlib
+                    matplotlib.use('Agg')
+                    import matplotlib.pyplot as plt
+
+                    doc = ezdxf.readfile(dxf_path)
+                    fig = plt.figure(figsize=(42, 29.7))  # A3 landscape
+                    ax = fig.add_axes([0, 0, 1, 1])
+                    ctx = ezdxf_mpl.RenderContext(doc)
+                    out = ezdxf_mpl.MatplotlibBackend(ax)
+                    ezdxf_mpl.Frontend(ctx, out).draw_layout(doc.modelspace())
+                    ax.set_aspect('equal')
+                    ax.autoscale()
+
+                    tmp_pdf = tempfile.mktemp(suffix='.pdf', prefix='tijan_dwg_render_')
+                    fig.savefig(tmp_pdf, format='pdf', bbox_inches='tight', dpi=200)
+                    plt.close(fig)
+
+                    # Now use CV pipeline on the rendered PDF
+                    from cv_geometry_extractor import extract_geometry_per_page_cv
+                    cv_geom = extract_geometry_per_page_cv(tmp_pdf, use_vision=True)
+                    if cv_geom:
+                        usable = cv_geom if 'walls' in cv_geom else {
+                            k: v for k, v in cv_geom.items()
+                            if isinstance(v, dict) and len(v.get('walls', [])) >= 3
+                        }
+                        if usable and (isinstance(usable, dict) and
+                                       (len(usable.get('walls', [])) >= 3 or len(usable) >= 1)):
+                            result["dwg_geometry"] = usable
+                            dwg_geom_found = True
+                            logger.info("[DWG fallback] CV pipeline succeeded: %s",
+                                        f"{len(usable.get('walls', []))} walls" if 'walls' in usable
+                                        else f"{len(usable)} levels")
+                    try:
+                        os.unlink(tmp_pdf)
+                    except:
+                        pass
+                except Exception as e:
+                    logger.warning("[DWG fallback] DXF→PDF→CV pipeline failed: %s", e)
+
+            # LAST RESORT: if still no geometry, save archi ref for Priority 4 fallback
+            if not dwg_geom_found:
+                logger.warning("[DWG] No geometry extracted — plans will use parametric grid. "
+                               "User should try uploading as PDF instead.")
+                if dxf_path:
+                    try:
+                        result["archi_pdf_ref"] = _save_archi_pdf(dxf_path)
+                    except:
+                        pass
 
         elif ext == "pdf":
             # PDF: extract params via Claude + try vector geometry extraction
