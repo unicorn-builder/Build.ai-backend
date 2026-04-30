@@ -3022,10 +3022,13 @@ async def get_review_info(project_id: str):
 # ── WAVE CHECKOUT ─────────────────────────────────────────
 WAVE_API_URL = "https://api.wave.com/v1/checkout/sessions"
 WAVE_API_KEY = os.environ.get("WAVE_API_KEY", "")
-WAVE_WEBHOOK_SECRET = os.environ.get("WAVE_WEBHOOK_SECRET", "")
+WAVE_API_SIGNING_SECRET = os.environ.get("WAVE_API_SIGNING_SECRET", "")  # wave_sn_AKS_... — signs our requests TO Wave
+WAVE_WEBHOOK_SECRET = os.environ.get("WAVE_WEBHOOK_SECRET", "")          # from Webhooks tab — verifies Wave's requests TO us
 
 if not WAVE_API_KEY:
     logger.warning("WAVE_API_KEY not set — payments will fail")
+if not WAVE_API_SIGNING_SECRET:
+    logger.warning("WAVE_API_SIGNING_SECRET not set — checkout requests will fail")
 if not WAVE_WEBHOOK_SECRET:
     logger.warning("WAVE_WEBHOOK_SECRET not set — webhook verification disabled")
 
@@ -3059,7 +3062,7 @@ async def create_payment(request: Request):
     body_str = _json.dumps(payload)
     timestamp = str(int(_time.time()))
     signature = _hmac.new(
-        WAVE_WEBHOOK_SECRET.encode("utf-8"),
+        WAVE_API_SIGNING_SECRET.encode("utf-8"),
         (timestamp + body_str).encode("utf-8"),
         _hashlib.sha256,
     ).hexdigest()
