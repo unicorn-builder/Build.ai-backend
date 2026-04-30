@@ -3044,22 +3044,35 @@ async def create_payment(request: Request):
 
     description = f"Tijan AI — {credits} crédit{'s' if credits > 1 else ''}"
 
+    import hmac as _hmac
+    import hashlib as _hashlib
+    import time as _time
+
     payload = {
         "amount": str(prix),
         "currency": "XOF",
         "success_url": f"https://tijan.ai/payment-success?credits={credits}&user_id={user_id}&plan={plan}",
         "error_url": "https://tijan.ai/pricing",
-        "client_reference": f"tijan_{user_id}_{credits}_{int(__import__('time').time())}",
+        "client_reference": f"tijan_{user_id}_{credits}_{int(_time.time())}",
     }
+
+    body_str = _json.dumps(payload)
+    timestamp = str(int(_time.time()))
+    signature = _hmac.new(
+        WAVE_WEBHOOK_SECRET.encode(),
+        f"{timestamp}.{body_str}".encode(),
+        _hashlib.sha256,
+    ).hexdigest()
 
     headers = {
         "Authorization": f"Bearer {WAVE_API_KEY}",
         "Content-Type": "application/json",
+        "Wave-Signature": f"t={timestamp},v1={signature}",
     }
 
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
-            resp = await client.post(WAVE_API_URL, json=payload, headers=headers)
+            resp = await client.post(WAVE_API_URL, content=body_str, headers=headers)
             data = resp.json()
 
         if resp.status_code == 200 and data.get("wave_launch_url"):
