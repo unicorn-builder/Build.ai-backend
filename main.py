@@ -27,11 +27,10 @@ Endpoints :
   POST /generate-fiches-structure → fiches techniques structure PDF
   POST /generate-fiches-mep       → fiches techniques MEP PDF
   POST /generate-planches         → planches BA PDF
-  POST /generate-plans-structure  → plans structure PDF (coffrage, ferraillage, voiles) — géo DXF + EC2
-  POST /generate-plans-mep        → plans MEP PDF (7 lots × niveaux) — géo DXF + moteur MEP
-  POST /generate-plans-structure-pro → plans structure PDF (default) ou DWG (?format=dwg) — sans restriction DWG-only
-  POST /generate-plans-mep-pro    → plans MEP PDF (default) ou DWG (?format=dwg) — sans restriction DWG-only
-  POST /generate-dossier-bim      → dossier BIM unifié PDF (tous lots, source unique)
+  POST /generate-plans-structure  → plans structure PDF (coffrage, ferraillage, voiles) — DWG/DXF obligatoire
+  POST /generate-plans-mep        → plans MEP PDF (7 lots × niveaux) — DWG/DXF obligatoire
+  POST /generate-plans-structure-pro → plans structure PDF ou DWG (?format=dwg) — DWG/DXF obligatoire
+  POST /generate-plans-mep-pro    → plans MEP PDF ou DWG (?format=dwg) — DWG/DXF obligatoire
   GET  /da-status                 → check Design Automation API availability
 """
 
@@ -2285,19 +2284,17 @@ async def generate_plans_structure(params: ParamsProjet):
         from generate_plans_structure_mep import generer_plans_structure
         donnees = params_to_donnees(params)
         rs = calculer_structure(donnees)
-        # Geometry priority: body > cache ref > APS URN > None (grid fallback)
+        # Geometry: DWG/DXF obligatoire — aucun fallback paramétrique
         dwg_geometry = _resolve_geometry(params)
-        # DWG-only policy: refuse only when explicitly PDF-sourced (CV pipeline
-        # marker) OR when request carries PDF markers without any DWG signal.
-        # If geom is missing and no PDF markers, fall through to parametric grid.
-        if _is_pdf_sourced_geometry(dwg_geometry) or _params_signal_pdf_input(params):
+        if not dwg_geometry or _is_pdf_sourced_geometry(dwg_geometry) or _params_signal_pdf_input(params):
             raise HTTPException(
                 status_code=422,
-                detail="Les plans structure nécessitent un fichier DWG/DXF en entrée. "
-                       "L'import PDF est désactivé pour les plans (calculs et autres livrables restent disponibles)."
+                detail="Les plans structure nécessitent un fichier DWG ou DXF en entrée. "
+                       "Veuillez importer vos plans architecturaux au format DWG/DXF "
+                       "pour générer les plans d'exécution. Les notes de calcul et "
+                       "autres livrables restent disponibles sans fichier DWG."
             )
-        logger.info(f"/generate-plans-structure: geometry={'yes' if dwg_geometry else 'no'}"
-                     f" walls={len(dwg_geometry.get('walls',[])) if dwg_geometry and 'walls' in dwg_geometry else '?'}")
+        logger.info(f"/generate-plans-structure: walls={len(dwg_geometry.get('walls',[])) if 'walls' in dwg_geometry else '?'}")
         # Resolve archi PDF for background (from cache ref or URL)
         archi_pdf_path = _resolve_archi_pdf(params)
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
@@ -2345,17 +2342,17 @@ async def generate_plans_mep(params: ParamsProjet):
         donnees = params_to_donnees(params)
         rs = calculer_structure(donnees)
         rm = calculer_mep(donnees, rs)
-        # Geometry priority: body > cache ref > APS URN > None (grid fallback)
+        # Geometry: DWG/DXF obligatoire — aucun fallback paramétrique
         dwg_geometry = _resolve_geometry(params)
-        # DWG-only policy: refuse only when explicitly PDF-sourced or when
-        # request carries PDF markers without any DWG signal.
-        if _is_pdf_sourced_geometry(dwg_geometry) or _params_signal_pdf_input(params):
+        if not dwg_geometry or _is_pdf_sourced_geometry(dwg_geometry) or _params_signal_pdf_input(params):
             raise HTTPException(
                 status_code=422,
-                detail="Les plans MEP nécessitent un fichier DWG/DXF en entrée. "
-                       "L'import PDF est désactivé pour les plans (calculs et autres livrables restent disponibles)."
+                detail="Les plans MEP nécessitent un fichier DWG ou DXF en entrée. "
+                       "Veuillez importer vos plans architecturaux au format DWG/DXF "
+                       "pour générer les plans d'exécution. Les notes de calcul et "
+                       "autres livrables restent disponibles sans fichier DWG."
             )
-        logger.info(f"/generate-plans-mep: geometry={'yes' if dwg_geometry else 'no'}")
+        logger.info(f"/generate-plans-mep: walls={len(dwg_geometry.get('walls',[])) if 'walls' in dwg_geometry else '?'}")
         # Resolve archi PDF for background (from cache ref or URL)
         archi_pdf_path = _resolve_archi_pdf(params)
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
@@ -2477,7 +2474,7 @@ async def da_status_endpoint():
 @app.post("/generate-plans-structure-pro")
 async def generate_plans_structure_pro(params: ParamsProjet, format: Optional[str] = "pdf"):
     """Professional structure plans — PDF by default, DWG via ?format=dwg.
-    Unlike /generate-plans-structure, this endpoint works with parametric grid (no DWG-only restriction).
+    DWG/DXF geometry required — no parametric grid fallback.
     When APS Design Automation is available, DWG output includes hatching, blocks, cartouche."""
     out_path = None
     dxf_path = None
@@ -2487,6 +2484,12 @@ async def generate_plans_structure_pro(params: ParamsProjet, format: Optional[st
         donnees = params_to_donnees(params)
         rs = calculer_structure(donnees)
         dwg_geometry = _resolve_geometry(params)
+        if not dwg_geometry or _is_pdf_sourced_geometry(dwg_geometry) or _params_signal_pdf_input(params):
+            raise HTTPException(
+                status_code=422,
+                detail="Les plans nécessitent un fichier DWG ou DXF en entrée. "
+                       "Veuillez importer vos plans architecturaux au format DWG/DXF."
+            )
 
         if format == "dwg":
             # DWG/DXF output for technicians
@@ -2562,7 +2565,7 @@ async def generate_plans_structure_pro(params: ParamsProjet, format: Optional[st
 @app.post("/generate-plans-mep-pro")
 async def generate_plans_mep_pro(params: ParamsProjet, format: Optional[str] = "pdf"):
     """Professional MEP plans — PDF by default, DWG via ?format=dwg.
-    Unlike /generate-plans-mep, this endpoint works with parametric grid (no DWG-only restriction).
+    DWG/DXF geometry required — no parametric grid fallback.
     When APS Design Automation is available, DWG output includes hatching, blocks, cartouche."""
     out_path = None
     dxf_path = None
@@ -2574,6 +2577,12 @@ async def generate_plans_mep_pro(params: ParamsProjet, format: Optional[str] = "
         rs = calculer_structure(donnees)
         rm = calculer_mep(donnees, rs)
         dwg_geometry = _resolve_geometry(params)
+        if not dwg_geometry or _is_pdf_sourced_geometry(dwg_geometry) or _params_signal_pdf_input(params):
+            raise HTTPException(
+                status_code=422,
+                detail="Les plans MEP nécessitent un fichier DWG ou DXF en entrée. "
+                       "Veuillez importer vos plans architecturaux au format DWG/DXF."
+            )
 
         if format == "dwg":
             # DWG/DXF output for technicians
@@ -2646,61 +2655,12 @@ async def generate_plans_mep_pro(params: ParamsProjet, format: Optional[str] = "
         gc.collect()
 
 
-@app.post("/generate-dossier-bim")
-async def generate_dossier_bim(params: ParamsProjet):
-    """Unified BIM plan dossier — single PDF with all trades by level.
-
-    Full pipeline: params → Building → equipment placement → MEP routing
-    → unified PDF organized by trade × level. BOQ counted from BIM model.
-
-    One source of truth: what you see on the plans = what's in the BOQ.
-    """
-    out_path = None
-    try:
-        from generate_plans_bim import full_bim_pipeline
-        lang = "en" if is_en(params) else "fr"
-
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
-            out_path = tmp.name
-
-        result = full_bim_pipeline(
-            params=params.dict(),
-            output_path=out_path,
-            lang=lang,
-        )
-
-        with open(out_path, "rb") as f:
-            pdf_bytes = f.read()
-
-        _archive_url = _supabase_archive_plan(
-            getattr(params, 'project_id', None) or params.dict().get('project_id'),
-            "dossier_bim", pdf_bytes)
-
-        logger.info("/generate-dossier-bim: %d pages, %d trades, %d KB",
-                     result["pages"], len(result["trades"]),
-                     len(pdf_bytes) // 1024)
-
-        resp = pdf_response(pdf_bytes, fname(params, "dossier_bim"),
-                            archive_url=_archive_url)
-        # Attach BOQ summary as header for frontend
-        resp.headers["X-Tijan-BOQ-Summary"] = str(result.get("boq_summary", {}))
-        resp.headers["X-Tijan-Trades"] = ",".join(result.get("trades", []))
-        resp.headers["Access-Control-Expose-Headers"] = (
-            "X-Plan-Archive-URL,Content-Disposition,"
-            "X-Tijan-BOQ-Summary,X-Tijan-Trades"
-        )
-        return resp
-
-    except Exception as e:
-        logger.error(f"/generate-dossier-bim error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        if out_path:
-            try:
-                os.unlink(out_path)
-            except OSError:
-                pass
-        gc.collect()
+# /generate-dossier-bim — REMOVED (v6.2.0)
+# The BIM dossier was producing parametric plans (from_params_dict) that didn't
+# reflect real architecture. Plans BA and Plans MEP now require DWG/DXF input
+# and produce professional output directly. The BIM modules (bim_model.py,
+# bim_parser.py, mep_router.py, etc.) are retained for future use with real
+# DWG-parsed geometry.
 
 
 def _supabase_archive_plan(project_id: str, kind: str, data: bytes, content_type: str = "application/pdf") -> Optional[str]:
