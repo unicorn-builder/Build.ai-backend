@@ -10,8 +10,9 @@ pydantic==2.6.4
 reportlab==4.1.0
 pypdf==4.1.0
 
-# Parsing géométrie
+# Parsing géométrie + DXF rendering
 ezdxf==1.4.2
+matplotlib>=3.8.0
 
 # Computer Vision (plan geometry extraction)
 opencv-python-headless==4.11.0.86

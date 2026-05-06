@@ -1370,6 +1370,27 @@ def generer_dossier_bim(output_path: str, building: Building,
 # CONVENIENCE: Full pipeline in one call
 # ══════════════════════════════════════════════════════════════
 
+def _build_bim_from_params(params: dict, lang: str = "fr") -> Building:
+    """Create a fully equipped Building from params dict.
+
+    Steps: params → Building → equipment placement → MEP routing.
+    Reusable by any renderer (ReportLab or ezdxf).
+    """
+    from room_rules import place_equipment_in_room
+    from mep_router import route_mep
+
+    building = Building.from_params_dict(params)
+
+    for level in building.levels:
+        for room in level.rooms:
+            room_walls = [w for w in level.walls
+                          if w.room_left_id == room.id or w.room_right_id == room.id]
+            room.equipment = place_equipment_in_room(room, room_walls, lang=lang)
+
+    building = route_mep(building)
+    return building
+
+
 def full_bim_pipeline(params: Dict, output_path: str,
                       lang: str = "fr") -> Dict[str, Any]:
     """Run the complete BIM pipeline from params to PDF.
@@ -1382,21 +1403,8 @@ def full_bim_pipeline(params: Dict, output_path: str,
 
     Returns metadata dict.
     """
-    from room_rules import place_equipment_in_room
-    from mep_router import route_mep
-
-    # Step 1: Create building
-    building = Building.from_params_dict(params)
-
-    # Step 2: Place equipment
-    for level in building.levels:
-        for room in level.rooms:
-            room_walls = [w for w in level.walls
-                          if w.room_left_id == room.id or w.room_right_id == room.id]
-            room.equipment = place_equipment_in_room(room, room_walls, lang=lang)
-
-    # Step 3: Route MEP
-    building = route_mep(building)
+    # Steps 1-3: Build equipped model
+    building = _build_bim_from_params(params, lang=lang)
 
     # Step 4: Generate dossier
     result = generer_dossier_bim(output_path, building, lang=lang)

@@ -40,7 +40,9 @@ Tijan AI is an **automated engineering bureau (bureau d'etudes automatise)** for
 | `mep_router.py` | MEP topology-aware routing (plumbing/HVAC/elec/fire) |
 | `bim_boq.py` | BIM-counted BOQ (equipment + network quantities from Building) |
 | `bim_clash.py` | Clash detection engine (segment/equipment/structural conflicts) |
-| `generate_plans_bim.py` | Unified plan dossier: cover + TOC + sublots + clash report |
+| `generate_plans_bim.py` | Unified plan dossier: cover + TOC + sublots + clash report (ReportLab) |
+| `generate_plans_dxf.py` | Professional DXF/PDF renderer using ezdxf + CAD blocks |
+| `mep_blocks.py` | 23 professional MEP block definitions for ezdxf (NF/EN symbols) |
 | `parse_plans.py` | DWG/DXF/PDF parameter extraction (legacy) |
 | `dwg_converter.py` | DWG to DXF conversion (ODA/LibreDWG/APS) |
 | `aps_design_automation.py` | Professional DWG output via APS Design Automation |
