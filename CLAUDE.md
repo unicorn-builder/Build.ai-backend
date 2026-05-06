@@ -39,7 +39,8 @@ Tijan AI is an **automated engineering bureau (bureau d'etudes automatise)** for
 | `bim_parser.py` | Universal parser: any format → Building graph |
 | `mep_router.py` | MEP topology-aware routing (plumbing/HVAC/elec/fire) |
 | `bim_boq.py` | BIM-counted BOQ (equipment + network quantities from Building) |
-| `generate_plans_bim.py` | Unified plan dossier: single PDF, organized by trade × level |
+| `bim_clash.py` | Clash detection engine (segment/equipment/structural conflicts) |
+| `generate_plans_bim.py` | Unified plan dossier: cover + TOC + sublots + clash report |
 | `parse_plans.py` | DWG/DXF/PDF parameter extraction (legacy) |
 | `dwg_converter.py` | DWG to DXF conversion (ODA/LibreDWG/APS) |
 | `aps_design_automation.py` | Professional DWG output via APS Design Automation |
@@ -118,8 +119,8 @@ Tijan AI is an **automated engineering bureau (bureau d'etudes automatise)** for
 ## Backlog — BIM Revolution (4 phases)
 1. **Phase 1: TijanBIM Data Model** — DONE. `bim_model.py` (Building/Level/Room/Wall/Opening/Equipment graph), `room_rules.py` (equipment rules per room type, trade definitions), `bim_parser.py` (universal parser: PDF/DWG/DXF → Building graph). Fixes: no clim in WC/couloirs, prises on walls, all SDB have WC+lavabo+VMC.
 2. **Phase 2: MEP Topology-Aware Routing** — DONE. `mep_router.py` — Plumbing router (colonnes montantes → distribution → fixtures, DTU 60.11 sizing), HVAC router (refrigerant to splits + VMC extraction + supply air), Electrical router (circuits per room, HCU + LCU), Fire safety router (SPK riser → main → branch + detection loop). All 4 routers tested: 342 segments routed across 36 rooms, zero orphan fixtures.
-3. **Phase 3: Unified BIM Dossier** — DONE. `generate_plans_bim.py` (single PDF organized by trade × level), `bim_boq.py` (equipment counted from BIM, not parametric formulas), `/generate-dossier-bim` endpoint (full pipeline: params → Building → equip → route → PDF + BOQ). BIM = single source of truth: plans and BOQ match exactly (504 equip, 456 segments, 8 trades, 32 pages for R+4). Next: IFC export + 3D viewer.
-4. **Phase 4: Synthesis & Coordination** — TODO. Clash detection, 3D sections per room, multi-trade coordination plans, compiled deliverable by level and trade.
+3. **Phase 3: Unified BIM Dossier** — DONE. `generate_plans_bim.py` (single PDF organized by trade × level with 14 sublots), `bim_boq.py` (equipment counted from BIM, not parametric formulas), `/generate-dossier-bim` endpoint (full pipeline: params → Building → equip → route → PDF + BOQ). BIM = single source of truth: plans and BOQ match exactly.
+4. **Phase 4: Synthesis & Coordination** — DONE. `bim_clash.py` (clash detection: segment-vs-segment clearance, equipment-vs-network proximity, network-vs-structural-wall, electrical-above-plumbing per NF C 15-100). Multi-trade coordination plans with clash markers on SYN pages. Compiled deliverable: cover page, table of contents with page references, plan pages, clash report page. Next: IFC export + 3D viewer.
 
 ### Previous backlog (all DONE)
 1. **Plans professionnels via Autodesk Design Automation API** — DONE.

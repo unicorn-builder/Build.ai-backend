@@ -35,6 +35,7 @@ from bim_model import (
 )
 from room_rules import TRADES, TradeDef, get_relevant_trades
 from bim_boq import generate_bim_boq, BOQItem
+from bim_clash import detect_clashes, ClashReport, ClashSeverity
 
 import logging
 logger = logging.getLogger("tijan.plans_bim")
@@ -665,6 +666,11 @@ def _render_sublot_page(c, level: Level, building: Building,
         _draw_all_equipment(c, level, ox, oy, scale)
         _draw_all_networks(c, level, ox, oy, scale)
         _draw_legend_synthesis(c, w, h)
+        # Draw clash markers if provided
+        level_clashes = sublot.get("_clashes_for_level", {}).get(level.name, [])
+        if level_clashes:
+            _draw_clash_markers(c, level_clashes, ox, oy, scale)
+            _draw_clash_legend(c, level_clashes, w, h)
 
     else:
         eq_types = sublot.get("eq_types", set())
@@ -805,6 +811,446 @@ def _draw_legend_synthesis(c, w: float, h: float):
 
 
 # ══════════════════════════════════════════════════════════════
+# CLASH MARKERS ON PLANS
+# ══════════════════════════════════════════════════════════════
+
+_CLASH_COLORS = {
+    ClashSeverity.HARD: colors.HexColor("#FF0000"),
+    ClashSeverity.SOFT: colors.HexColor("#FF8C00"),
+    ClashSeverity.CROSSING: colors.HexColor("#FFD700"),
+}
+
+
+def _draw_clash_markers(c, clashes, ox: float, oy: float, scale: float):
+    """Draw clash markers on a plan page.
+
+    HARD = red filled circle with X
+    SOFT = orange hollow circle with !
+    CROSSING = yellow diamond with ?
+    """
+    for i, clash in enumerate(clashes):
+        if clash.location is None:
+            continue
+        px = _tx(clash.location.x, ox, scale)
+        py = _ty(clash.location.y, oy, scale)
+        color = _CLASH_COLORS.get(clash.severity, ROUGE)
+
+        if clash.severity == ClashSeverity.HARD:
+            # Red filled circle with X
+            c.setStrokeColor(color)
+            c.setFillColor(colors.Color(1, 0, 0, alpha=0.3))
+            c.circle(px, py, 4*mm, fill=1, stroke=1)
+            c.setFillColor(BLANC)
+            c.setFont("Helvetica-Bold", 6)
+            c.drawCentredString(px, py - 2, "X")
+        elif clash.severity == ClashSeverity.CROSSING:
+            # Yellow diamond
+            c.setStrokeColor(color)
+            c.setLineWidth(0.5)
+            c.setFillColor(colors.Color(1, 0.84, 0, alpha=0.3))
+            path = c.beginPath()
+            path.moveTo(px, py + 3*mm)
+            path.lineTo(px + 3*mm, py)
+            path.lineTo(px, py - 3*mm)
+            path.lineTo(px - 3*mm, py)
+            path.close()
+            c.drawPath(path, fill=1, stroke=1)
+            c.setFillColor(NOIR)
+            c.setFont("Helvetica-Bold", 5)
+            c.drawCentredString(px, py - 1.5, "?")
+        else:
+            # Orange hollow circle with !
+            c.setStrokeColor(color)
+            c.setLineWidth(0.8)
+            c.circle(px, py, 3*mm, fill=0, stroke=1)
+            c.setFillColor(color)
+            c.setFont("Helvetica-Bold", 6)
+            c.drawCentredString(px, py - 2, "!")
+
+        # Clash number label
+        c.setFillColor(NOIR)
+        c.setFont("Helvetica", 3.5)
+        c.drawString(px + 4*mm, py + 1*mm, f"C{i+1}")
+
+    c.setLineWidth(0.3)  # Reset
+
+
+def _draw_clash_legend(c, clashes, w: float, h: float, lang: str = "fr"):
+    """Draw a clash summary legend on the synthesis page."""
+    if not clashes:
+        return
+
+    hard = sum(1 for cl in clashes if cl.severity == ClashSeverity.HARD)
+    soft = sum(1 for cl in clashes if cl.severity == ClashSeverity.SOFT)
+    cross = sum(1 for cl in clashes if cl.severity == ClashSeverity.CROSSING)
+
+    x = w - 85*mm
+    y = h - 25*mm
+
+    c.setFont("Helvetica-Bold", 6)
+    c.setFillColor(NOIR)
+    title = "CONFLITS DÉTECTÉS" if lang == "fr" else "DETECTED CLASHES"
+    c.drawString(x, y, title)
+
+    c.setFont("Helvetica", 4.5)
+    items = [
+        (f"Critiques: {hard}" if lang == "fr" else f"Hard: {hard}",
+         _CLASH_COLORS[ClashSeverity.HARD]),
+        (f"Dégagements: {soft}" if lang == "fr" else f"Soft: {soft}",
+         _CLASH_COLORS[ClashSeverity.SOFT]),
+        (f"Croisements: {cross}" if lang == "fr" else f"Crossings: {cross}",
+         _CLASH_COLORS[ClashSeverity.CROSSING]),
+    ]
+    for i, (label, color) in enumerate(items):
+        ly = y - (i + 1) * 4*mm
+        c.setFillColor(color)
+        c.circle(x + 3, ly + 1, 2, fill=1, stroke=0)
+        c.setFillColor(NOIR)
+        c.drawString(x + 8, ly - 0.5, label)
+
+
+def _render_clash_report_page(c, w: float, h: float, building,
+                               clash_report: ClashReport,
+                               page: int, total: int,
+                               lang: str = "fr"):
+    """Render a dedicated clash report summary page."""
+    margin = 14*mm
+    x = margin
+    y = h - 30*mm
+
+    # Title
+    c.setFont("Helvetica-Bold", 14)
+    c.setFillColor(NOIR)
+    title = ("RAPPORT DE COORDINATION — DÉTECTION DES CONFLITS"
+             if lang == "fr" else
+             "COORDINATION REPORT — CLASH DETECTION")
+    c.drawString(x, y, title)
+    y -= 10*mm
+
+    # Summary box
+    c.setStrokeColor(GRIS3)
+    c.setFillColor(GRIS5)
+    c.roundRect(x, y - 25*mm, 160*mm, 25*mm, 3, fill=1, stroke=1)
+
+    c.setFont("Helvetica-Bold", 10)
+    c.setFillColor(NOIR)
+    total_label = "Total des conflits" if lang == "fr" else "Total clashes"
+    c.drawString(x + 5*mm, y - 8*mm,
+                 f"{total_label}: {clash_report.total_clashes}")
+
+    c.setFont("Helvetica", 8)
+    labels = {
+        "fr": ["Critiques (à corriger)", "Dégagements insuffisants",
+               "Croisements (à vérifier)"],
+        "en": ["Hard (must fix)", "Soft (clearance)", "Crossings (verify)"],
+    }
+    l = labels.get(lang, labels["fr"])
+    counts = [clash_report.hard_count, clash_report.soft_count,
+              clash_report.crossing_count]
+    clrs = [_CLASH_COLORS[ClashSeverity.HARD],
+            _CLASH_COLORS[ClashSeverity.SOFT],
+            _CLASH_COLORS[ClashSeverity.CROSSING]]
+
+    for i, (label, count, clr) in enumerate(zip(l, counts, clrs)):
+        cx = x + 5*mm + i * 52*mm
+        c.setFillColor(clr)
+        c.circle(cx, y - 16*mm, 3, fill=1, stroke=0)
+        c.setFillColor(NOIR)
+        c.drawString(cx + 5, y - 18*mm, f"{label}: {count}")
+
+    y -= 35*mm
+
+    # Table header
+    c.setFont("Helvetica-Bold", 6)
+    c.setFillColor(BLANC)
+    c.setStrokeColor(GRIS3)
+    c.setFillColor(colors.HexColor("#333333"))
+    c.rect(x, y - 5*mm, w - 2*margin, 6*mm, fill=1, stroke=1)
+    c.setFillColor(BLANC)
+
+    cols = {
+        "fr": ["#", "Sévérité", "Niveau", "Pièce", "Élément A", "Élément B",
+               "Distance", "Requis", "Description"],
+        "en": ["#", "Severity", "Level", "Room", "Element A", "Element B",
+               "Distance", "Required", "Description"],
+    }
+    headers = cols.get(lang, cols["fr"])
+    col_x = [x+2*mm, x+8*mm, x+22*mm, x+38*mm, x+58*mm, x+88*mm,
+             x+118*mm, x+135*mm, x+152*mm]
+    for ci, header in enumerate(headers):
+        if ci < len(col_x):
+            c.drawString(col_x[ci], y - 4*mm, header)
+
+    y -= 6*mm
+
+    # Table rows (max ~40 per page to stay readable)
+    c.setFont("Helvetica", 4.5)
+    max_rows = 40
+    for row_i, clash in enumerate(clash_report.clashes[:max_rows]):
+        ry = y - (row_i + 1) * 4.5*mm
+        if ry < 30*mm:
+            break  # Stop before overrunning cartouche
+
+        # Alternating row background
+        if row_i % 2 == 0:
+            c.setFillColor(colors.Color(0.95, 0.95, 0.95))
+            c.rect(x, ry - 1.5*mm, w - 2*margin, 4.5*mm, fill=1, stroke=0)
+
+        sev_color = _CLASH_COLORS.get(clash.severity, NOIR)
+        c.setFillColor(NOIR)
+        c.drawString(col_x[0], ry, f"C{row_i+1}")
+
+        c.setFillColor(sev_color)
+        c.drawString(col_x[1], ry, clash.severity.value.upper())
+
+        c.setFillColor(NOIR)
+        c.drawString(col_x[2], ry, clash.level_name[:8])
+        c.drawString(col_x[3], ry, (clash.room_name or "—")[:12])
+        c.drawString(col_x[4], ry, clash.element_a_type[:20])
+        c.drawString(col_x[5], ry, clash.element_b_type[:20])
+        c.drawString(col_x[6], ry, f"{clash.distance_mm:.0f}mm")
+        c.drawString(col_x[7], ry, f"{clash.required_mm:.0f}mm")
+        c.drawString(col_x[8], ry, clash.description[:45])
+
+    if len(clash_report.clashes) > max_rows:
+        c.setFont("Helvetica-Oblique", 5)
+        c.drawString(x, y - (max_rows + 2) * 4.5*mm,
+                     f"... et {len(clash_report.clashes) - max_rows} "
+                     f"conflits supplémentaires" if lang == "fr" else
+                     f"... and {len(clash_report.clashes) - max_rows} "
+                     f"more clashes")
+
+    # Cartouche
+    _cartouche_bim(c, w, h, building,
+                   "Rapport de Coordination" if lang == "fr"
+                   else "Coordination Report",
+                   page, total, "SYN")
+
+
+# ══════════════════════════════════════════════════════════════
+# COVER PAGE & TABLE OF CONTENTS
+# ══════════════════════════════════════════════════════════════
+
+def _render_cover_page(c, w: float, h: float, building: Building,
+                       total_pages: int, clash_report: ClashReport,
+                       lang: str = "fr"):
+    """Professional cover page for the BIM dossier."""
+    # Background — subtle gradient border
+    c.setStrokeColor(VERT)
+    c.setLineWidth(3)
+    c.rect(15*mm, 15*mm, w - 30*mm, h - 30*mm, fill=0, stroke=1)
+    c.setLineWidth(0.5)
+    c.setStrokeColor(GRIS4)
+    c.rect(18*mm, 18*mm, w - 36*mm, h - 36*mm, fill=0, stroke=1)
+
+    # Tijan logo / brand
+    cy = h - 55*mm
+    c.setFont("Helvetica-Bold", 28)
+    c.setFillColor(VERT)
+    c.drawCentredString(w / 2, cy, "TIJAN AI")
+    c.setFont("Helvetica", 11)
+    c.setFillColor(GRIS3)
+    label = ("Bureau d'Études Automatisé" if lang == "fr"
+             else "Automated Engineering Bureau")
+    c.drawCentredString(w / 2, cy - 14, label)
+
+    # Separator
+    cy -= 28
+    c.setStrokeColor(VERT)
+    c.setLineWidth(1.5)
+    c.line(w / 2 - 60*mm, cy, w / 2 + 60*mm, cy)
+
+    # Title
+    cy -= 25
+    c.setFont("Helvetica-Bold", 22)
+    c.setFillColor(NOIR)
+    title = ("DOSSIER BIM UNIFIÉ" if lang == "fr"
+             else "UNIFIED BIM DOSSIER")
+    c.drawCentredString(w / 2, cy, title)
+
+    # Subtitle
+    cy -= 16
+    c.setFont("Helvetica", 14)
+    sub = ("Plans d'exécution — Tous corps d'état" if lang == "fr"
+           else "Execution Plans — All Trades")
+    c.drawCentredString(w / 2, cy, sub)
+
+    # Project info box
+    cy -= 35
+    box_w, box_h = 180*mm, 55*mm
+    box_x = (w - box_w) / 2
+    c.setFillColor(GRIS5)
+    c.setStrokeColor(GRIS3)
+    c.setLineWidth(0.5)
+    c.roundRect(box_x, cy - box_h, box_w, box_h, 4, fill=1, stroke=1)
+
+    # Project details
+    c.setFont("Helvetica-Bold", 12)
+    c.setFillColor(NOIR)
+    label_proj = "Projet" if lang == "fr" else "Project"
+    c.drawString(box_x + 8*mm, cy - 12*mm, f"{label_proj}:")
+    c.setFont("Helvetica", 12)
+    c.drawString(box_x + 35*mm, cy - 12*mm, building.name)
+
+    c.setFont("Helvetica-Bold", 10)
+    details = [
+        ("Ville" if lang == "fr" else "City", building.city),
+        ("Réf." if lang == "fr" else "Ref.", building.reference or "—"),
+        ("Niveaux" if lang == "fr" else "Levels",
+         str(len(building.levels))),
+        ("Béton" if lang == "fr" else "Concrete", building.classe_beton),
+        ("Acier" if lang == "fr" else "Steel", building.classe_acier),
+    ]
+    for i, (label, value) in enumerate(details):
+        row = i // 2
+        col = i % 2
+        dx = box_x + 8*mm + col * 90*mm
+        dy = cy - 22*mm - row * 10*mm
+        c.setFont("Helvetica-Bold", 9)
+        c.drawString(dx, dy, f"{label}:")
+        c.setFont("Helvetica", 9)
+        c.drawString(dx + 25*mm, dy, value)
+
+    # Stats bar
+    cy = cy - box_h - 20*mm
+    c.setFont("Helvetica-Bold", 10)
+    c.setFillColor(NOIR)
+    stats_label = "Contenu du dossier" if lang == "fr" else "Dossier Contents"
+    c.drawCentredString(w / 2, cy, stats_label)
+
+    cy -= 12
+    c.setFont("Helvetica", 9)
+
+    # Count equipment and segments
+    total_equip = sum(len(r.equipment)
+                      for l in building.levels for r in l.rooms)
+    total_segs = sum(len(r.network_segments)
+                     for l in building.levels for r in l.rooms)
+    total_segs += sum(len(l.network_segments) for l in building.levels)
+
+    stats = [
+        (f"{total_pages}", "pages"),
+        (f"{len(building.levels)}", "niveaux" if lang == "fr" else "levels"),
+        (f"{total_equip}", "équipements" if lang == "fr" else "equipment"),
+        (f"{total_segs}", "segments" if lang == "fr" else "segments"),
+        (f"{clash_report.total_clashes}",
+         "conflits" if lang == "fr" else "clashes"),
+    ]
+
+    stat_w = 45*mm
+    start_x = (w - stat_w * len(stats)) / 2
+    for i, (num, label) in enumerate(stats):
+        sx = start_x + i * stat_w
+        c.setFont("Helvetica-Bold", 16)
+        c.setFillColor(VERT)
+        c.drawCentredString(sx + stat_w / 2, cy, num)
+        c.setFont("Helvetica", 7)
+        c.setFillColor(GRIS3)
+        c.drawCentredString(sx + stat_w / 2, cy - 10, label)
+
+    # Footer
+    c.setFont("Helvetica", 7)
+    c.setFillColor(GRIS3)
+    c.drawCentredString(w / 2, 25*mm,
+                        f"Généré le {datetime.now().strftime('%d/%m/%Y à %H:%M')}"
+                        f" — Tijan AI v6.1.0")
+    c.drawCentredString(w / 2, 20*mm, "www.tijan.ai")
+
+
+def _render_toc_page(c, w: float, h: float, building: Building,
+                     page_plan: list, has_clash_page: bool,
+                     page_num: int, total_pages: int,
+                     lang: str = "fr"):
+    """Render a Table of Contents page with page references."""
+    margin = 25*mm
+    x = margin
+    y = h - 35*mm
+
+    c.setFont("Helvetica-Bold", 16)
+    c.setFillColor(NOIR)
+    title = "SOMMAIRE" if lang == "fr" else "TABLE OF CONTENTS"
+    c.drawString(x, y, title)
+
+    # Green underline
+    c.setStrokeColor(VERT)
+    c.setLineWidth(1.5)
+    c.line(x, y - 4, x + 80*mm, y - 4)
+
+    y -= 18*mm
+    c.setFont("Helvetica", 8)
+    c.setFillColor(GRIS3)
+
+    # Group by sublot
+    current_sublot_title = ""
+    plan_page_offset = 3  # Cover + TOC = 2 pages before plans
+
+    for i, (sublot, level) in enumerate(page_plan):
+        plan_page = plan_page_offset + i
+
+        # New sublot header
+        if sublot["title"] != current_sublot_title:
+            current_sublot_title = sublot["title"]
+            y -= 3*mm
+            c.setFont("Helvetica-Bold", 8)
+            c.setFillColor(NOIR)
+            c.drawString(x, y, sublot["title"])
+
+            # Trade color indicator
+            trade_color = TRADE_COLORS.get(sublot["trade_code"], GRIS3)
+            c.setFillColor(trade_color)
+            c.rect(x - 5*mm, y - 0.5, 3*mm, 4*mm, fill=1, stroke=0)
+
+            y -= 5*mm
+
+        # Level entry
+        c.setFont("Helvetica", 7)
+        c.setFillColor(GRIS2)
+        entry = f"    {level.name}"
+        c.drawString(x, y, entry)
+
+        # Dotted line to page number
+        c.setStrokeColor(GRIS4)
+        c.setDash(1, 2)
+        text_end = x + c.stringWidth(entry, "Helvetica", 7) + 3*mm
+        page_x = w - margin - 15*mm
+        if text_end < page_x:
+            c.line(text_end, y + 1, page_x, y + 1)
+        c.setDash()
+
+        # Page number
+        c.drawRightString(w - margin, y, str(plan_page))
+
+        y -= 4.5*mm
+
+        # Check if we need a new column or page
+        if y < 35*mm:
+            # Move to second column
+            if x < w / 2:
+                x = w / 2
+                y = h - 55*mm
+            else:
+                break  # Can't fit more on this page
+
+    # Clash report entry
+    if has_clash_page:
+        y -= 5*mm
+        c.setFont("Helvetica-Bold", 8)
+        c.setFillColor(ROUGE)
+        clash_title = ("Rapport de Coordination" if lang == "fr"
+                       else "Coordination Report")
+        c.drawString(x, y, clash_title)
+
+        c.setFont("Helvetica", 7)
+        c.setFillColor(GRIS2)
+        c.drawRightString(w - margin, y, str(total_pages))
+
+    # Cartouche
+    _cartouche_bim(c, w, h, building,
+                   "Sommaire" if lang == "fr" else "Table of Contents",
+                   page_num, total_pages, "ARC")
+
+
+# ══════════════════════════════════════════════════════════════
 # MAIN ENTRY POINT
 # ══════════════════════════════════════════════════════════════
 
@@ -827,10 +1273,18 @@ def generer_dossier_bim(output_path: str, building: Building,
     Returns:
         Dict with metadata: {pages, trades, boq_summary}
     """
+    # Run clash detection
+    clash_report = detect_clashes(building, lang=lang)
+
     # Get relevant sublots for this building
     sublots = _get_relevant_sublots(building)
     if not sublots:
         sublots = [s for s in SUBLOTS if s["trade_code"] in ("ARC", "STR", "SYN")]
+
+    # Inject clash data into SYN sublots for rendering
+    for sublot in sublots:
+        if sublot["trade_code"] == "SYN":
+            sublot["_clashes_for_level"] = clash_report.by_level
 
     # Pre-count pages (skip empty sublot×level combos)
     page_plan = []
@@ -839,16 +1293,33 @@ def generer_dossier_bim(output_path: str, building: Building,
             if _sublot_has_content(sublot, level):
                 page_plan.append((sublot, level))
 
-    total_pages = len(page_plan)
+    # Count pages: cover + TOC + plan pages + clash report
+    has_clash_page = clash_report.total_clashes > 0
+    total_pages = 2 + len(page_plan) + (1 if has_clash_page else 0)
     page = 0
 
     c = pdfcanvas.Canvas(output_path, pagesize=A3L)
     c.setTitle(f"Dossier BIM — {building.name}")
     c.setAuthor("Tijan AI — Bureau d'Études Automatisé")
 
+    w, h = A3L
+
+    # Page 1: Cover page
+    page += 1
+    c.setPageSize(A3L)
+    _render_cover_page(c, w, h, building, total_pages, clash_report, lang)
+    c.showPage()
+
+    # Page 2: Table of Contents
+    page += 1
+    c.setPageSize(A3L)
+    _render_toc_page(c, w, h, building, page_plan, has_clash_page,
+                     page, total_pages, lang)
+    c.showPage()
+
+    # Plan pages
     for sublot, level in page_plan:
         page += 1
-        w, h = A3L
         c.setPageSize(A3L)
 
         ox, oy, scale, draw_w, draw_h = _compute_layout(level, w, h)
@@ -856,6 +1327,14 @@ def generer_dossier_bim(output_path: str, building: Building,
         _render_sublot_page(c, level, building, sublot,
                             ox, oy, scale, w, h, page, total_pages)
 
+        c.showPage()
+
+    # Clash report page (last page)
+    if has_clash_page:
+        page += 1
+        c.setPageSize(A3L)
+        _render_clash_report_page(c, w, h, building, clash_report,
+                                  page, total_pages, lang)
         c.showPage()
 
     c.save()
@@ -866,8 +1345,10 @@ def generer_dossier_bim(output_path: str, building: Building,
     # Collect unique trade codes used
     trade_codes = list(dict.fromkeys(s["trade_code"] for s in sublots))
 
-    logger.info("BIM dossier: %d pages, %d sublots, %d levels → %s",
-                page, len(sublots), len(building.levels), output_path)
+    logger.info("BIM dossier: %d pages, %d sublots, %d levels, "
+                "%d clashes → %s",
+                page, len(sublots), len(building.levels),
+                clash_report.total_clashes, output_path)
 
     return {
         "pages": page,
@@ -875,6 +1356,12 @@ def generer_dossier_bim(output_path: str, building: Building,
         "sublots": [s["title"] for s in sublots],
         "levels": [l.name for l in building.levels],
         "boq_summary": boq["summary"],
+        "clash_summary": {
+            "total": clash_report.total_clashes,
+            "hard": clash_report.hard_count,
+            "soft": clash_report.soft_count,
+            "crossing": clash_report.crossing_count,
+        },
         "output_path": output_path,
     }
 
