@@ -31,6 +31,7 @@ Endpoints :
   POST /generate-plans-mep        → plans MEP PDF (7 lots × niveaux) — géo DXF + moteur MEP
   POST /generate-plans-structure-pro → plans structure PDF (default) ou DWG (?format=dwg) — sans restriction DWG-only
   POST /generate-plans-mep-pro    → plans MEP PDF (default) ou DWG (?format=dwg) — sans restriction DWG-only
+  POST /generate-dossier-bim      → dossier BIM unifié PDF (tous lots, source unique)
   GET  /da-status                 → check Design Automation API availability
 """
 
@@ -2642,6 +2643,63 @@ async def generate_plans_mep_pro(params: ParamsProjet, format: Optional[str] = "
                     os.unlink(p)
                 except OSError:
                     pass
+        gc.collect()
+
+
+@app.post("/generate-dossier-bim")
+async def generate_dossier_bim(params: ParamsProjet):
+    """Unified BIM plan dossier — single PDF with all trades by level.
+
+    Full pipeline: params → Building → equipment placement → MEP routing
+    → unified PDF organized by trade × level. BOQ counted from BIM model.
+
+    One source of truth: what you see on the plans = what's in the BOQ.
+    """
+    out_path = None
+    try:
+        from generate_plans_bim import full_bim_pipeline
+        lang = "en" if is_en(params) else "fr"
+
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+            out_path = tmp.name
+
+        result = full_bim_pipeline(
+            params=params.dict(),
+            output_path=out_path,
+            lang=lang,
+        )
+
+        with open(out_path, "rb") as f:
+            pdf_bytes = f.read()
+
+        _archive_url = _supabase_archive_plan(
+            getattr(params, 'project_id', None) or params.dict().get('project_id'),
+            "dossier_bim", pdf_bytes)
+
+        logger.info("/generate-dossier-bim: %d pages, %d trades, %d KB",
+                     result["pages"], len(result["trades"]),
+                     len(pdf_bytes) // 1024)
+
+        resp = pdf_response(pdf_bytes, fname(params, "dossier_bim"),
+                            archive_url=_archive_url)
+        # Attach BOQ summary as header for frontend
+        resp.headers["X-Tijan-BOQ-Summary"] = str(result.get("boq_summary", {}))
+        resp.headers["X-Tijan-Trades"] = ",".join(result.get("trades", []))
+        resp.headers["Access-Control-Expose-Headers"] = (
+            "X-Plan-Archive-URL,Content-Disposition,"
+            "X-Tijan-BOQ-Summary,X-Tijan-Trades"
+        )
+        return resp
+
+    except Exception as e:
+        logger.error(f"/generate-dossier-bim error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if out_path:
+            try:
+                os.unlink(out_path)
+            except OSError:
+                pass
         gc.collect()
 
 

@@ -34,7 +34,13 @@ Tijan AI is an **automated engineering bureau (bureau d'etudes automatise)** for
 | `engine_mep_v2.py` | MEP calculations (~2000 lines) |
 | `gen_*.py` | PDF/Excel/Word generators (FR + EN variants) |
 | `generate_plans_*.py` | BA drawings, plumbing plans, architecture plans |
-| `parse_plans.py` | DWG/DXF/PDF parameter extraction |
+| `bim_model.py` | TijanBIM: Building/Level/Room/Wall/Equipment data model |
+| `room_rules.py` | Room type equipment rules + trade definitions |
+| `bim_parser.py` | Universal parser: any format → Building graph |
+| `mep_router.py` | MEP topology-aware routing (plumbing/HVAC/elec/fire) |
+| `bim_boq.py` | BIM-counted BOQ (equipment + network quantities from Building) |
+| `generate_plans_bim.py` | Unified plan dossier: single PDF, organized by trade × level |
+| `parse_plans.py` | DWG/DXF/PDF parameter extraction (legacy) |
 | `dwg_converter.py` | DWG to DXF conversion (ODA/LibreDWG/APS) |
 | `aps_design_automation.py` | Professional DWG output via APS Design Automation |
 | `prix_marche.py` | Market pricing database (5 countries) |
@@ -109,10 +115,16 @@ Tijan AI is an **automated engineering bureau (bureau d'etudes automatise)** for
 - **gen_boq_xlsx.py:** C40/50 price lookup
 - **generate_fiches_structure_v3.py:** Safe concrete class parsing
 
-## Backlog (3 chantiers — rien d'autre)
-1. **Plans professionnels via Autodesk Design Automation API** — DONE. `aps_design_automation.py` created. Endpoints `/generate-plans-structure-pro` and `/generate-plans-mep-pro` send ezdxf DXF to AutoCAD cloud for hatching, blocks, dimensions, cartouche, A3 layout. Falls back to basic DXF if DA unavailable. Parsing pipeline also improved: APS Model Derivative enriches geometry when ezdxf finds thin data (few walls/axes).
-2. **Modification d'étude depuis le chat** — DONE. Already fully implemented in chat_engine.py + main.py /chat endpoint.
-3. **Amélioration du design de la landing page** — DONE. Complete redesign with SVG icons, normes bar, premium visual polish.
+## Backlog — BIM Revolution (4 phases)
+1. **Phase 1: TijanBIM Data Model** — DONE. `bim_model.py` (Building/Level/Room/Wall/Opening/Equipment graph), `room_rules.py` (equipment rules per room type, trade definitions), `bim_parser.py` (universal parser: PDF/DWG/DXF → Building graph). Fixes: no clim in WC/couloirs, prises on walls, all SDB have WC+lavabo+VMC.
+2. **Phase 2: MEP Topology-Aware Routing** — DONE. `mep_router.py` — Plumbing router (colonnes montantes → distribution → fixtures, DTU 60.11 sizing), HVAC router (refrigerant to splits + VMC extraction + supply air), Electrical router (circuits per room, HCU + LCU), Fire safety router (SPK riser → main → branch + detection loop). All 4 routers tested: 342 segments routed across 36 rooms, zero orphan fixtures.
+3. **Phase 3: Unified BIM Dossier** — DONE. `generate_plans_bim.py` (single PDF organized by trade × level), `bim_boq.py` (equipment counted from BIM, not parametric formulas), `/generate-dossier-bim` endpoint (full pipeline: params → Building → equip → route → PDF + BOQ). BIM = single source of truth: plans and BOQ match exactly (504 equip, 456 segments, 8 trades, 32 pages for R+4). Next: IFC export + 3D viewer.
+4. **Phase 4: Synthesis & Coordination** — TODO. Clash detection, 3D sections per room, multi-trade coordination plans, compiled deliverable by level and trade.
+
+### Previous backlog (all DONE)
+1. **Plans professionnels via Autodesk Design Automation API** — DONE.
+2. **Modification d'étude depuis le chat** — DONE.
+3. **Amélioration du design de la landing page** — DONE.
 
 ## Preferences
 - Malick veut etre performant partout — keep code clean, fast, and safe
